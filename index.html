@@ -233,7 +233,7 @@ const ARM={key:'south',name:'South Arm',site:'Gilbert Bay (South Arm)',ppm:25,
    Steps: sorption → [hold] → wash → desorb (5 equal fractions) → wash2. hold = rest of the sorption slot after a stop on
    breakthrough: the outlet curve c/c0 = BT_SET·(τ/τbt)^BT_N reaches the set-point at τbt = sorption × capacity(col,k). ---------- */
 const STEPS=['sorption','wash','desorb','wash2'];
-const BT_SET=0.30,BT_N=3;                            // breakthrough set-point (fraction of feed Li), outlet-curve exponent
+const BT_SET=0.10,BT_N=3;                            // breakthrough set-point (fraction of feed Li), outlet-curve exponent
 const SLOT=ARM.P/8;                                  // phase shift between neighbouring columns
 function r9(v){return Math.round(v*1e9)/1e9;}         // kills float noise on slot boundaries
 function capacity(col,k){const v=Math.sin((col+1)*12.9898+k*78.233)*43758.5453;return 0.90+0.15*(v-Math.floor(v));}

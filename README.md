@@ -64,7 +64,7 @@ The eight columns run the same cycle shifted by one eighth of it: column N start
 Brine flows without a break: some column is always on sorption, so P-101 never stops.
 
 **Stop on breakthrough.** NMR-out watches the outlet of each sorbing column. When it
-reaches 30 % of the feed Li, the PLC ends that column's sorption early: its valves
+reaches 10 % of the feed Li (2.5 ppm), the PLC ends that column's sorption early: its valves
 shut and it waits on **hold** until the end of its sorption slot. The schedule of
 the following steps does not move.
 
