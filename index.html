@@ -1,0 +1,1002 @@
+<!-- Great Salt Lake DLE Pilot — South Arm — interactive 3D process visualization (v6)
+     One UF-style skid: P-101 → 50 µm strainer → 10 / 1 µm cartridges → UF → NMR-in → 48-valve battery (6 per column, all at the headers) → 8 radial columns (~20 L).
+     Carousel shifted by P/8: 4 columns on sorption; every step runs top-down (brine line or water / acid service line in on top, one outlet line below); NMR-out via sample selector.
+     Feed Li 25 ppm · cycle 2.20 h · sorption 1.1 h to 10–11 mg/g, stop on breakthrough, >85% recovery.
+     Water wash BOTH after sorption and after desorption — no NaCl stage. Three.js r128. -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Great Salt Lake DLE Pilot — South Arm — 3D</title>
+<style>
+  :root{
+    --bg0:#070b10; --panel:#0f1922e6; --stroke:#23323e; --stroke-soft:#1a262f;
+    --ink:#eaf2f6; --muted:#92a3b0; --faint:#5d6e7a; --accent:#21d4c4;
+    --brine:#2e86de; --wash:#5ad6e8; --acid:#ff9f43; --wash2:#4fe0b0;
+    --eluate:#ffd23f; --sulfate:#9aa7b2; --waste:#6f8170;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono","Cascadia Mono",Consolas,monospace;
+    --sans:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:radial-gradient(130% 120% at 50% 0%,#0f1822 0%,var(--bg0) 72%);color:var(--ink);font-family:var(--sans);overflow:hidden}
+  #app{position:fixed;inset:0}
+  canvas{display:block;touch-action:none}
+  .panel{touch-action:none;background:var(--panel);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--stroke);border-radius:14px;box-shadow:0 20px 55px -22px #000c}
+  .eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent)}
+
+  #brand{position:absolute;top:16px;left:16px;padding:13px 16px;max-width:min(48vw,372px);z-index:5}
+  #brand h1{margin:.18em 0 .12em;font-size:18px;font-weight:650;letter-spacing:-.01em;line-height:1.1}
+  #brandLogo{display:block;width:188px;max-width:54vw;height:auto;background:#eef1ef;border-radius:9px;padding:8px 12px;margin:2px 0 10px;box-shadow:0 1px 7px rgba(0,0,0,.32)}
+  #brand .sub{font-size:11.5px;color:var(--muted);line-height:1.45}
+
+  #hmi{position:absolute;left:16px;top:120px;width:min(48vw,308px);padding:10px 14px;z-index:5}
+  #hmi .row{display:flex;justify-content:space-between;gap:10px;font-size:11.5px;padding:2px 0;border-bottom:1px dashed var(--stroke-soft)}
+  #hmi .row:last-child{border-bottom:none}
+  #hmi .k{color:var(--muted);white-space:nowrap} #hmi .v{font-family:var(--mono);text-align:right}
+  #hmi .desc{font-size:10.5px;color:var(--muted);line-height:1.45;margin-top:6px}
+  #hStop{height:3em;overflow:hidden}                       /* fixed: the HMI must not grow as holds come and go */
+
+  #stats{position:absolute;left:16px;bottom:80px;width:min(48vw,308px);padding:10px 12px;z-index:5}
+  #stats h3{margin:0 0 7px;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  #stats .grid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+  #stats .cell{background:#0c151ccc;border:1px solid var(--stroke-soft);border-radius:9px;padding:3px 9px}
+  #stats .num{font-family:var(--mono);font-size:14px;font-weight:650;white-space:nowrap}
+  #stats .lab{font-size:10px;color:var(--faint);margin-top:0;line-height:1.15}
+  #stats .wide{grid-column:1/3;display:flex;align-items:center;gap:9px}
+  #stats .arrow{font-family:var(--mono);color:var(--accent);font-size:13px}
+
+  #modebar{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:6;display:flex;gap:6px;padding:7px;align-items:center;flex-wrap:wrap;justify-content:center;max-width:96vw}
+  .sep{width:1px;height:26px;background:var(--stroke);margin:0 4px}
+  .ibtn{appearance:none;border:1px solid var(--stroke);background:#0e1721;color:var(--muted);height:38px;min-width:38px;padding:0 9px;border-radius:9px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;transition:.16s}
+  .ibtn:hover{color:var(--ink);border-color:#33485a}
+  #mbDrag{cursor:move;touch-action:none;font-size:16px;letter-spacing:-2px}
+  .ibtn[data-on="1"]{color:var(--accent);border-color:var(--accent)}
+
+  #carousel{position:absolute;right:16px;bottom:16px;width:min(92vw,352px);padding:11px 12px 9px;z-index:5}
+  #carousel h3{margin:0 0 7px;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:600;display:flex;gap:8px}
+  #carousel h3 span{margin-left:auto;letter-spacing:.04em;text-transform:none;font-family:var(--mono);font-weight:500;color:var(--faint)}
+  #gantt{display:block;width:100%;height:auto;cursor:pointer}
+  #ganttNote{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:5px;min-height:14px}
+  #clock{font-family:var(--mono);font-size:12px;color:var(--ink);padding:0 6px;min-width:118px;text-align:center}
+  .spd{font-family:var(--mono);font-size:11.5px}
+  .lrow[data-step]{cursor:pointer;border-radius:6px;padding:3px 4px;margin:0 -4px}
+  .lrow[data-step]:hover{background:#16232c}
+  .lrow.hl{background:#1a2a33} .lrow.dim{opacity:.38}
+  #legend{position:absolute;top:16px;right:16px;width:244px;padding:12px 13px;z-index:5}
+  #legend h3{margin:0 0 9px;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .lrow{display:flex;align-items:center;gap:9px;font-size:11.5px;padding:3px 0}
+  .lrow .sw{width:22px;height:6px;border-radius:3px;flex:none;box-shadow:0 0 8px -1px currentColor}
+  .lrow .lt{color:var(--ink)} .lrow .ld{color:var(--faint);margin-left:auto;font-family:var(--mono);font-size:10px}
+  #fractab{margin-top:11px;border-top:1px solid var(--stroke-soft);padding-top:9px;display:none}
+  #fractab.show{display:block}
+  table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:10px}
+  th,td{text-align:right;padding:3px 4px;color:var(--muted)}
+  th:first-child,td:first-child{text-align:left}
+  thead th{color:var(--faint);font-weight:500;border-bottom:1px solid var(--stroke-soft)}
+  tr.cur{background:#1a2a33}
+  td.prod{color:var(--eluate)} td.waste{color:var(--sulfate)}
+
+  #info{position:absolute;right:16px;bottom:16px;width:min(86vw,330px);padding:0;z-index:7;opacity:0;transform:translateY(8px);pointer-events:none;transition:.2s;overflow:hidden}
+  #info.show{opacity:1;transform:none;pointer-events:auto}
+  #info .ihead{padding:13px 15px 11px;border-bottom:1px solid var(--stroke-soft);display:flex;align-items:flex-start;gap:10px}
+  #info .tag{width:11px;height:11px;border-radius:3px;margin-top:3px;flex:none;box-shadow:0 0 10px currentColor}
+  #info .ititle{font-size:14.5px;font-weight:650;line-height:1.2}
+  #info .icode{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:2px}
+  #info .ibody{padding:11px 15px 14px;font-size:12px;line-height:1.55;color:var(--muted)}
+  #info .ibody b{color:var(--ink);font-weight:600}
+  #info .x{margin-left:auto;cursor:pointer;color:var(--faint);font-size:18px;line-height:1;padding:0 2px}
+  #info .x:hover{color:var(--ink)}
+
+  #tip{position:fixed;z-index:9;pointer-events:none;background:#0a131accc;border:1px solid var(--accent);border-radius:8px;padding:5px 9px;font-size:11.5px;font-weight:560;color:var(--ink);opacity:0;transform:translate(-50%,-130%);transition:opacity .12s;white-space:nowrap}
+  #tip .t2{font-family:var(--mono);font-size:9.5px;color:var(--muted);font-weight:400}
+
+  #hint{position:absolute;left:50%;top:14px;transform:translateX(-50%);z-index:4;font-size:11px;color:var(--faint);font-family:var(--mono);letter-spacing:.04em;pointer-events:none;text-align:center}
+  @media (max-width:820px){ #hint,#legend{display:none} #brand{max-width:62vw} #stats{display:none} }
+
+  body.panels-hidden #brand,body.panels-hidden #hmi,body.panels-hidden #stats,body.panels-hidden #legend,body.panels-hidden #carousel,body.panels-hidden #info,body.panels-hidden #hint{display:none!important;}
+  #load{position:fixed;inset:0;z-index:30;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:var(--bg0);transition:opacity .5s}
+  #load.hide{opacity:0;pointer-events:none}
+  .ring{width:46px;height:46px;border-radius:50%;border:2.5px solid #1c2a34;border-top-color:var(--accent);animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #utah{display:flex;align-items:center;gap:20px;margin-bottom:4px}
+  #utah .uem{height:76px;width:auto;filter:drop-shadow(0 6px 18px rgba(0,0,0,.55))}
+  #utah .useal{height:70px}
+  #load .lt2{font-size:11.5px;color:var(--faint);letter-spacing:.05em;margin-top:-6px}
+  #load .lt{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+</style>
+
+<div id="app"></div>
+<div id="load">
+  <div id="utah">
+    <svg class="uem" viewBox="0 0 132 84" role="img" aria-label="Flag of Utah">
+      <rect width="132" height="84" rx="5" fill="#0f3d70"/>
+      <path d="M0 52 L34 34 L52 44 L74 26 L96 40 L132 22 L132 60 L0 60 Z" fill="#f2f5f7"/>
+      <path d="M0 60 H132 V84 H0 Z" fill="#b3352d"/>
+      <path d="M66 12 L92 26 L92 56 L66 70 L40 56 L40 26 Z" fill="#e3a52b" stroke="#f7e2ac" stroke-width="2.2"/>
+      <g fill="#fdf6e6">
+        <path d="M60 30 h12 a3 3 0 0 1 0 6 h-12 a3 3 0 0 1 0-6"/>
+        <path d="M57 38 h18 a3.2 3.2 0 0 1 0 6.4 h-18 a3.2 3.2 0 0 1 0-6.4"/>
+        <path d="M54 46.4 h24 a3.4 3.4 0 0 1 0 6.8 h-24 a3.4 3.4 0 0 1 0-6.8"/>
+      </g>
+      <path d="M62 53.2 h8 v6 h-8 z" fill="#8a5c12"/>
+      <path d="M66 18.5 l2.1 4.6 l4.9 .5 l-3.7 3.3 l1.1 4.8 l-4.4-2.6 l-4.4 2.6 l1.1-4.8 l-3.7-3.3 l4.9-.5 z" fill="#fdf6e6"/>
+    </svg>
+    <svg class="uem useal" viewBox="0 0 84 84" role="img" aria-label="Utah — the Beehive State">
+      <circle cx="42" cy="42" r="40" fill="#0d1a24" stroke="#e3a52b" stroke-width="2.4"/>
+      <circle cx="42" cy="42" r="33" fill="none" stroke="#3c556a" stroke-width="1"/>
+      <g fill="#e3a52b">
+        <path d="M36 30 h12 a3 3 0 0 1 0 6 h-12 a3 3 0 0 1 0-6"/>
+        <path d="M33 38 h18 a3.2 3.2 0 0 1 0 6.4 h-18 a3.2 3.2 0 0 1 0-6.4"/>
+        <path d="M30 46.4 h24 a3.4 3.4 0 0 1 0 6.8 h-24 a3.4 3.4 0 0 1 0-6.8"/>
+      </g>
+      <path d="M38 53.2 h8 v5.4 h-8 z" fill="#8a5c12"/>
+      <g fill="#f2f5f7" opacity=".85">
+        <ellipse cx="23" cy="30" rx="2.6" ry="1.7"/><ellipse cx="61" cy="27" rx="2.6" ry="1.7"/>
+      </g>
+      <text x="42" y="21" text-anchor="middle" font-family="Inter,system-ui,Arial" font-size="8.4"
+            font-weight="700" letter-spacing="1.6" fill="#f2f5f7">UTAH</text>
+      <text x="42" y="64.5" text-anchor="middle" font-family="Inter,system-ui,Arial" font-size="5.8"
+            font-weight="600" letter-spacing="1.1" fill="#9fb1bd">INDUSTRY · 1896</text>
+    </svg>
+  </div>
+  <div class="ring"></div><div class="lt">Building the pilot</div>
+  <div class="lt2">State of Utah · Great Salt Lake — South Arm</div></div>
+
+<div id="brand" class="panel">
+  <img id="brandLogo" alt="XtraLit"/>
+  <h1>Great Salt Lake DLE Pilot — South Arm</h1>
+  <div class="sub">Gilbert Bay (South Arm), Utah · feed Li ≈ 25 ppm. One skid: filtration to UF, valve battery, 8 radial columns (~20 L) in a carousel, 4 on sorption. Brine, water and acid all run top→down, water wash after sorption and after desorption. Click for details.</div>
+</div>
+
+<div id="hmi" class="panel">
+  <div class="row"><span class="k">Columns</span><span class="v" id="hSorb">—</span></div>
+  <div class="row"><span class="k">P-101 · brine</span><span class="v" id="hP101">—</span></div>
+  <div class="row"><span class="k">P-201 · water</span><span class="v" id="hP201">—</span></div>
+  <div class="row"><span class="k">P-301 · acid</span><span class="v" id="hP301">—</span></div>
+  <div class="row"><span class="k">NMR-in · out</span><span class="v"><span id="hNin">—</span> · <span id="hNout">—</span></span></div>
+  <div class="row"><span class="k">Stop set-point</span><span class="v"><span id="hSet">—</span> · rec. <span id="hRec">—</span></span></div>
+  <div class="row"><span class="k">EC-101 · pH-101</span><span class="v"><span id="ecval">—</span> · <span id="phval">—</span></span></div>
+  <div class="row"><span class="k">Battery</span><span class="v" id="hValves">—</span></div>
+  <div class="desc" id="hStop">—</div>
+</div>
+
+<div id="stats" class="panel">
+  <h3>Process snapshot</h3>
+  <div class="grid">
+    <div class="cell"><div class="num">~20 L</div><div class="lab">Column · 20 kg LMO</div></div>
+    <div class="cell"><div class="num">10–11 mg/g</div><div class="lab">Li capacity (1.1 h sorption)</div></div>
+    <div class="cell"><div class="num">&gt;85%</div><div class="lab">Recovery rate</div></div>
+    <div class="cell"><div class="num" style="color:var(--eluate)">~6000 ppm</div><div class="lab">Li in eluate</div></div>
+    <div class="cell wide"><span class="num" style="color:var(--brine)">Feed 25</span><span class="arrow">──▶</span><span class="num" style="color:var(--eluate)">Eluate ~6000</span><span class="lab" style="margin-left:auto">ppm · ≈240×</span></div>
+    <div class="cell"><div class="num" style="color:var(--eluate)">~9 kg</div><div class="lab">Li₂CO₃ / cycle</div></div>
+    <div class="cell"><div class="num">~10.9</div><div class="lab">Cycles / day (2.20 h cycle)</div></div>
+    <div class="cell wide"><span class="num" style="color:var(--eluate)">~97 kg/day</span><span class="lab" style="margin-left:auto">Li₂CO₃ · ~860 m³ brine/day · PLC</span></div>
+  </div>
+</div>
+
+<div id="modebar" class="panel">
+  <button class="ibtn" id="mbDrag" title="Drag panel to a corner">⠿</button>
+  <button class="ibtn" id="btnPlay" data-on="1" title="Run / pause the carousel">⏸</button>
+  <button class="ibtn spd" data-s="0.5" title="1 process hour = 40 s">×0.5</button>
+  <button class="ibtn spd" data-s="1" title="1 process hour = 20 s">×1</button>
+  <button class="ibtn spd" data-s="2" title="1 process hour = 10 s">×2</button>
+  <span id="clock" title="Process clock">t 0.00 h</span>
+  <span class="sep"></span>
+  <button class="ibtn" id="btnXray" data-on="0" title="See-through: pipe walls, column shells and tank walls">Transparent</button>
+  <button class="ibtn" id="btnLabels" data-on="1" title="Toggle labels">🏷</button>
+  <button class="ibtn" id="btnRot" title="Auto-rotate">◴</button>
+  <button class="ibtn" id="btnReset" title="Reset view">⌂</button>
+  <button class="ibtn" id="btnPanels" title="Hide panels">Hide</button>
+</div>
+
+<div id="legend" class="panel">
+  <h3>Flow streams</h3>
+  <div class="lrow nodrag" data-step="sorption" style="color:var(--brine)"><span class="sw" style="background:var(--brine)"></span><span class="lt">South Arm brine</span><span class="ld">4 cols · top↓</span></div>
+  <div class="lrow nodrag" data-step="wash" style="color:var(--wash)"><span class="sw" style="background:var(--wash)"></span><span class="lt">Water wash 1</span><span class="ld">after sorption</span></div>
+  <div class="lrow nodrag" data-step="desorb" style="color:var(--acid)"><span class="sw" style="background:var(--acid)"></span><span class="lt">H₂SO₄ 0.8 M</span><span class="ld">top↓</span></div>
+  <div class="lrow nodrag" data-step="wash2" style="color:var(--wash2)"><span class="sw" style="background:var(--wash2)"></span><span class="lt">Water wash 2</span><span class="ld">after desorption</span></div>
+  <div class="lrow nodrag" data-step="desorb" style="color:var(--eluate)"><span class="sw" style="background:var(--eluate)"></span><span class="lt">Product eluate</span><span class="ld">Fr-2/3</span></div>
+  <div class="lrow nodrag" data-step="desorb" style="color:var(--sulfate)"><span class="sw" style="background:var(--sulfate)"></span><span class="lt">Sulfate / tails</span><span class="ld">Fr-1/4/5</span></div>
+  <div class="lrow" style="color:#7d8790"><span class="sw" style="background:#7d8790"></span><span class="lt">Hold — stop on breakthrough</span><span class="ld">valves shut</span></div>
+  <div id="fractab">
+    <h3>Desorption fractions <span style="color:var(--muted)" id="frnow"></span></h3>
+    <table><thead><tr><th>Fr</th><th>Li</th><th>Ca</th><th>Mg</th><th>Mn</th><th>To</th></tr></thead><tbody id="frbody"></tbody></table>
+  </div>
+</div>
+
+<div id="carousel" class="panel">
+  <h3>Carousel<span id="ganttHead">—</span></h3>
+  <canvas id="gantt" class="nodrag" width="328" height="150"></canvas>
+  <div id="ganttNote">—</div>
+</div>
+
+<div id="info" class="panel">
+  <div class="ihead"><span class="tag" id="iTag"></span>
+    <div><div class="ititle" id="iTitle"></div><div class="icode" id="iCode"></div></div>
+    <span class="x" id="iClose">×</span></div>
+  <div class="ibody" id="iBody"></div>
+</div>
+
+<div id="tip"><span id="tipT"></span><div class="t2" id="tipC"></div></div>
+<div id="hint">drag to orbit · scroll to zoom · right-drag to pan · hover to identify · click for details</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+"use strict";
+const T=THREE;
+/* ---------- ARM — everything that differs between the two arms lives here; code below is identical in south/ and north/ ---------- */
+const ARM={key:'south',name:'South Arm',site:'Gilbert Bay (South Arm)',ppm:25,
+  P:2.20,dur:{sorption:1.10,wash:0.20,desorb:0.65,wash2:0.25},   // h; regeneration 1.10 h; neighbour shift P/8
+  brinePerCol:9,washPerCol:9,sorbing:[4,4],p101:36,p101Txt:'36 m³/h nominal (27 with a column on hold)',
+  cyclesDay:10.9,brineDay:860,liDay:97,enrich:240,pondColor:0x1f7a9e,
+  sorbTxt:'1.1 h',pondNote:'South-arm brine sits at roughly 14 % TDS — the causeway keeps it far less concentrated than the north arm.'};
+/* ---------- SCHED — the carousel as a pure function of process time tH (hours). Column c (0-based) lags C1 by c·P/8.
+   Steps: sorption → [hold] → wash → desorb (5 equal fractions) → wash2. hold = rest of the sorption slot after a stop on
+   breakthrough: the outlet curve c/c0 = BT_SET·(τ/τbt)^BT_N reaches the set-point at τbt = sorption × capacity(col,k). ---------- */
+const STEPS=['sorption','wash','desorb','wash2'];
+const BT_SET=0.30,BT_N=3;                            // breakthrough set-point (fraction of feed Li), outlet-curve exponent
+const SLOT=ARM.P/8;                                  // phase shift between neighbouring columns
+function r9(v){return Math.round(v*1e9)/1e9;}         // kills float noise on slot boundaries
+function capacity(col,k){const v=Math.sin((col+1)*12.9898+k*78.233)*43758.5453;return 0.90+0.15*(v-Math.floor(v));}
+function stepAt(col,tH){const d=ARM.dur,u0=r9(tH/SLOT-col),k=Math.floor(u0/8),u=r9(u0-8*k);
+  const uS=r9(d.sorption/SLOT),uW=r9((d.sorption+d.wash)/SLOT),uD=r9((d.sorption+d.wash+d.desorb)/SLOT);
+  if(u<uS){const uStop=r9(uS*Math.min(1,capacity(col,k)));
+    return u<uStop?{step:'sorption',frac:-1,tIn:u*SLOT,k}:{step:'hold',frac:-1,tIn:(u-uStop)*SLOT,k};}
+  if(u<uW)return {step:'wash',frac:-1,tIn:(u-uS)*SLOT,k};
+  if(u<uD)return {step:'desorb',frac:Math.min(4,Math.floor(5*(u-uW)/(uD-uW))),tIn:(u-uW)*SLOT,k};
+  return {step:'wash2',frac:-1,tIn:(u-uD)*SLOT,k};}
+function sorbingCount(tH){let n=0;for(let c=0;c<8;c++)if(stepAt(c,tH).step==='sorption')n++;return n;}
+function outletPpm(col,tH){const s=stepAt(col,tH);if(s.step!=='sorption'&&s.step!=='hold')return null;
+  const cap=capacity(col,s.k),tbt=ARM.dur.sorption*cap,tau=s.step==='hold'?ARM.dur.sorption*Math.min(1,cap):s.tIn;
+  return ARM.ppm*BT_SET*Math.pow(Math.min(1,tau/tbt),BT_N);}
+function cycleRecovery(col,k){return 1-BT_SET*Math.pow(Math.min(1,1/capacity(col,k)),BT_N)/(BT_N+1);}   // 1 − mean outlet/feed over the slot
+/* ---------- END SCHED */
+/* peak number of columns in a step set at once, read off the schedule — pump duties in texts and HMI come from here */
+function peakCols(steps){let m=0;for(let t=0;t<ARM.P*8;t+=ARM.P/400){let n=0;for(let c=0;c<8;c++)if(steps.indexOf(stepAt(c,t).step)>=0)n++;m=Math.max(m,n);}return m;}
+const WASH_MAX=peakCols(['wash','wash2']),DES_MAX=peakCols(['desorb']),P201_MAX=WASH_MAX*ARM.washPerCol;
+const SORB_TXT=ARM.sorbing[0]===ARM.sorbing[1]?String(ARM.sorbing[0]):ARM.sorbing[0]+'–'+ARM.sorbing[1];
+const RM=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+const C={brine:0x2e86de,wash:0x5ad6e8,acid:0xff9f43,wash2:0x4fe0b0,eluate:0xffd23f,sulfate:0x9aa7b2,waste:0x6f8170,
+  accent:0x21d4c4,pvc:0x8d959b,pvcD:0x6f777d,dark:0x3b4651,frp:0xa39b52,colBody:0xc9d1d4};
+
+const app=document.getElementById('app');
+const scene=new T.Scene();scene.fog=new T.Fog(0x080d13,60,160);
+const camera=new T.PerspectiveCamera(45,innerWidth/innerHeight,0.1,600);
+const renderer=new T.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;
+renderer.outputEncoding=T.sRGBEncoding;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.05;
+app.appendChild(renderer.domElement);
+
+(function(){const cv=document.createElement('canvas');cv.width=16;cv.height=256;const ctx=cv.getContext('2d');const g=ctx.createLinearGradient(0,0,0,256);
+  g.addColorStop(0,'#16222e');g.addColorStop(0.5,'#0c141c');g.addColorStop(1,'#070b10');ctx.fillStyle=g;ctx.fillRect(0,0,16,256);scene.background=new T.CanvasTexture(cv);})();
+(function(){const cv=document.createElement('canvas');cv.width=512;cv.height=256;const ctx=cv.getContext('2d');const g=ctx.createLinearGradient(0,0,0,256);
+  g.addColorStop(0,'#dfe9f0');g.addColorStop(0.45,'#9fb4c4');g.addColorStop(0.55,'#5a6c79');g.addColorStop(1,'#1a2129');ctx.fillStyle=g;ctx.fillRect(0,0,512,256);
+  const rg=ctx.createRadialGradient(360,70,5,360,70,120);rg.addColorStop(0,'rgba(255,245,225,0.95)');rg.addColorStop(1,'rgba(255,245,225,0)');ctx.fillStyle=rg;ctx.fillRect(0,0,512,256);
+  const tex=new T.CanvasTexture(cv);tex.mapping=T.EquirectangularReflectionMapping;const p=new T.PMREMGenerator(renderer);p.compileEquirectangularShader();
+  scene.environment=p.fromEquirectangular(tex).texture;tex.dispose();p.dispose();})();
+
+scene.add(new T.HemisphereLight(0xcfe0ee,0x0a0f14,0.55));
+scene.add(new T.AmbientLight(0x44545f,0.35));
+const key=new T.DirectionalLight(0xfff3e2,1.5);key.position.set(24,36,16);key.castShadow=true;
+key.shadow.mapSize.set(2048,2048);key.shadow.camera.near=1;key.shadow.camera.far=140;
+key.shadow.camera.left=-60;key.shadow.camera.right=60;key.shadow.camera.top=60;key.shadow.camera.bottom=-60;
+key.shadow.bias=-0.0005;key.shadow.normalBias=0.025;scene.add(key);
+const fill=new T.DirectionalLight(0x5a8fc4,0.45);fill.position.set(-22,14,-20);scene.add(fill);
+const rim=new T.DirectionalLight(0x21d4c4,0.3);rim.position.set(0,9,-30);scene.add(rim);
+
+function concreteTex(){const cv=document.createElement('canvas');cv.width=cv.height=256;const x=cv.getContext('2d');x.fillStyle='#1d2730';x.fillRect(0,0,256,256);
+  for(let i=0;i<4000;i++){const v=18+Math.random()*22;x.fillStyle=`rgba(${v+10},${v+18},${v+26},0.5)`;x.fillRect(Math.random()*256,Math.random()*256,1.3,1.3);}
+  const t=new T.CanvasTexture(cv);t.wrapS=t.wrapT=T.RepeatWrapping;t.repeat.set(8,8);return t;}
+function grainTex(){const cv=document.createElement('canvas');cv.width=cv.height=128;const x=cv.getContext('2d');x.fillStyle='#070707';x.fillRect(0,0,128,128);
+  for(let i=0;i<2600;i++){const v=Math.random();x.fillStyle=v<.55?'#000000':v<.85?'#1c1c1c':'#2e2e2e';const r=0.8+Math.random()*1.6;x.beginPath();x.arc(Math.random()*128,Math.random()*128,r,0,7);x.fill();}
+  const t=new T.CanvasTexture(cv);t.wrapS=t.wrapT=T.RepeatWrapping;t.repeat.set(2,3);return t;}
+function flowTex(){const cv=document.createElement('canvas');cv.width=256;cv.height=16;const x=cv.getContext('2d');
+  const bg=x.createLinearGradient(0,0,0,16);bg.addColorStop(0,'#6f767c');bg.addColorStop(0.5,'#c2c8cd');bg.addColorStop(1,'#6f767c');x.fillStyle=bg;x.fillRect(0,0,256,16);
+  for(let i=0;i<7;i++){const cx=i*36+12;const g=x.createLinearGradient(cx-20,0,cx+20,0);g.addColorStop(0,'rgba(255,255,255,0)');g.addColorStop(0.5,'rgba(255,255,255,0.92)');g.addColorStop(1,'rgba(255,255,255,0)');x.fillStyle=g;x.fillRect(cx-20,0,40,16);}
+  const t=new T.CanvasTexture(cv);t.wrapS=T.RepeatWrapping;t.wrapT=T.ClampToEdgeWrapping;return t;}
+const FLOW=flowTex();
+const LOGO_URI="data:image/png;base64,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";
+const logoDecalMat=new T.MeshBasicMaterial({transparent:true,depthWrite:false,side:T.FrontSide});
+new T.TextureLoader().load(LOGO_URI,function(t){t.anisotropy=8;logoDecalMat.map=t;logoDecalMat.needsUpdate=true;});
+{const bl=document.getElementById('brandLogo');if(bl)bl.src=LOGO_URI;}
+
+
+const M={
+  // wetted parts are plastic (PVC-U / PP: corrosive brine and acid), frames are FRP — nothing process-side is metal
+  pvc:new T.MeshStandardMaterial({color:C.pvc,metalness:0,roughness:0.55,envMapIntensity:0.5}),
+  pvcD:new T.MeshStandardMaterial({color:C.pvcD,metalness:0,roughness:0.58,envMapIntensity:0.5}),
+  dark:new T.MeshStandardMaterial({color:C.dark,metalness:0.05,roughness:0.62,envMapIntensity:0.5}),
+  frp:new T.MeshStandardMaterial({color:C.frp,metalness:0,roughness:0.72,envMapIntensity:0.45}),
+  frpDeck:new T.MeshStandardMaterial({color:0x4a4d38,metalness:0,roughness:0.85}),
+  colBody:new T.MeshStandardMaterial({color:C.colBody,metalness:0,roughness:0.45,envMapIntensity:0.6}),
+  motor:new T.MeshStandardMaterial({color:0x4a5866,metalness:0.5,roughness:0.45,envMapIntensity:0.8}),
+  pipe:new T.MeshStandardMaterial({color:C.pvc,metalness:0,roughness:0.55,envMapIntensity:0.5,transparent:true,opacity:1}),
+  glass:new T.MeshStandardMaterial({color:0xcfeaf2,metalness:0,roughness:0.04,transparent:true,opacity:0.14,envMapIntensity:1.3,side:T.DoubleSide}),
+  sorbent:new T.MeshStandardMaterial({color:0x0b0b0b,map:grainTex(),metalness:0.06,roughness:0.97,side:T.DoubleSide}),
+  screen:new T.MeshStandardMaterial({color:0x8a96a0,metalness:0.1,roughness:0.4,transparent:true,opacity:0.5,wireframe:true}),
+  collector:new T.MeshStandardMaterial({color:0x7a858e,metalness:0,roughness:0.5}),
+  display:new T.MeshStandardMaterial({color:0x07151a,emissive:0x0e4d52,emissiveIntensity:0.9,roughness:0.35}),
+  white:new T.MeshStandardMaterial({color:0xeef2f0,roughness:0.5,metalness:0.1}),
+  guard:new T.MeshStandardMaterial({color:0xf2b134,metalness:0.4,roughness:0.5,envMapIntensity:0.7}),
+};
+/* see-through switch: 'cut' objects show only in Transparent mode, 'solid' ones only in the default opaque view;
+   xrMats are walls that turn translucent ({m, op}) */
+const xrObjs=[],xrMats=[];
+function xr(o,kind){o.userData.xr=kind;xrObjs.push(o);return o;}
+function liq(hex,op){return new T.MeshStandardMaterial({color:hex,transparent:true,opacity:op||0.6,roughness:0.15,metalness:0,emissive:hex,emissiveIntensity:0.14});}
+
+(function(){const g=new T.Group();
+  const sand=new T.Mesh(new T.PlaneGeometry(160,160),new T.MeshStandardMaterial({color:0x10171e,roughness:0.97}));sand.rotation.x=-Math.PI/2;sand.receiveShadow=true;g.add(sand);
+  const pad=new T.Mesh(new T.PlaneGeometry(42,34),new T.MeshStandardMaterial({color:0x222d36,roughness:0.92,map:concreteTex()}));pad.rotation.x=-Math.PI/2;pad.position.set(0,0.01,0);pad.receiveShadow=true;g.add(pad);
+  const grid=new T.GridHelper(160,80,0x1b2630,0x121a21);grid.position.y=0.015;grid.material.transparent=true;grid.material.opacity=0.45;g.add(grid);scene.add(g);})();
+
+const selectables=[];const labelGroup=new T.Group();scene.add(labelGroup);
+const LIB=new Set(Object.values(M));
+function selectable(group,info){group.userData.info=info;const own=new Map();
+  group.traverse(o=>{if(o.isMesh){o.userData.root=group;selectables.push(o);
+    if(LIB.has(o.material)){if(!own.has(o.material))own.set(o.material,o.material.clone());o.material=own.get(o.material);}if(o.material&&o.material.emissive)o.userData._em=o.material.emissive.getHex();}});}
+function label(text,opts){opts=opts||{};const lines=Array.isArray(text)?text:[text];
+  const fs=opts.fs||40,sub=opts.subfs||26,padX=22,padY=16,gap=8;const cv=document.createElement('canvas'),ctx=cv.getContext('2d');
+  const f0=`${opts.weight||700} ${fs}px Inter,system-ui,Segoe UI,Arial`,f1=`500 ${sub}px Inter,system-ui,Segoe UI,Arial`;
+  ctx.font=f0;let w=ctx.measureText(lines[0]).width;if(lines[1]){ctx.font=f1;w=Math.max(w,ctx.measureText(lines[1]).width);}
+  w=Math.ceil(w)+padX*2;const h=padY*2+fs+(lines[1]?(gap+sub):0);cv.width=w;cv.height=h;
+  const r=18;ctx.fillStyle=opts.bg||'rgba(9,15,21,0.86)';ctx.beginPath();ctx.moveTo(r,0);ctx.arcTo(w,0,w,h,r);ctx.arcTo(w,h,0,h,r);ctx.arcTo(0,h,0,0,r);ctx.arcTo(0,0,w,0,r);ctx.fill();
+  ctx.strokeStyle=opts.border||'rgba(33,212,196,0.35)';ctx.lineWidth=2.5;ctx.stroke();
+  ctx.textAlign='center';ctx.textBaseline='top';ctx.font=f0;ctx.fillStyle=opts.color||'#eaf2f6';ctx.fillText(lines[0],w/2,padY);
+  if(lines[1]){ctx.font=f1;ctx.fillStyle=opts.subcolor||'#9fb1bd';ctx.fillText(lines[1],w/2,padY+fs+gap);}
+  const tex=new T.CanvasTexture(cv);tex.anisotropy=8;
+  const sp=new T.Sprite(new T.SpriteMaterial({map:tex,transparent:true,depthTest:false,depthWrite:false}));sp.renderOrder=999;
+  const sc=(opts.scale||1)*0.0125;sp.scale.set(w*sc,h*sc,1);sp.center.set(0.5,0);return sp;}
+function addLabel(sp,x,y,z){sp.position.set(x,y,z);labelGroup.add(sp);return sp;}
+function colLabel(name){const cv=document.createElement('canvas'),ctx=cv.getContext('2d');const tex=new T.CanvasTexture(cv);tex.anisotropy=8;
+  const sp=new T.Sprite(new T.SpriteMaterial({map:tex,transparent:true,depthTest:false,depthWrite:false}));sp.renderOrder=999;sp.center.set(0.5,0);
+  sp.update=(showFlow)=>{const fs=42,sub=25,fl=31,padX=22,padY=15,gap=8;const f0=`700 ${fs}px Inter,system-ui,Segoe UI,Arial`,f1=`500 ${sub}px Inter,system-ui,Segoe UI,Arial`,f2=`700 ${fl}px Inter,system-ui,Segoe UI,Arial`;
+    ctx.font=f0;let w=ctx.measureText(name).width;ctx.font=f1;w=Math.max(w,ctx.measureText('Radial column').width);if(showFlow){ctx.font=f2;w=Math.max(w,ctx.measureText('9 m³/h').width);}
+    w=Math.ceil(w)+padX*2;const h=padY*2+fs+gap+sub+(showFlow?(gap+fl):0);cv.width=w;cv.height=h;
+    const r=18;ctx.fillStyle='rgba(9,15,21,0.86)';ctx.beginPath();ctx.moveTo(r,0);ctx.arcTo(w,0,w,h,r);ctx.arcTo(w,h,0,h,r);ctx.arcTo(0,h,0,0,r);ctx.arcTo(0,0,w,0,r);ctx.fill();
+    ctx.strokeStyle=showFlow?'rgba(46,134,222,0.65)':'rgba(33,212,196,0.35)';ctx.lineWidth=2.5;ctx.stroke();
+    ctx.textAlign='center';ctx.textBaseline='top';ctx.font=f0;ctx.fillStyle='#eaf2f6';ctx.fillText(name,w/2,padY);
+    ctx.font=f1;ctx.fillStyle='#9fb1bd';ctx.fillText('Radial column',w/2,padY+fs+gap);
+    if(showFlow){ctx.font=f2;ctx.fillStyle='#7fc0ff';ctx.fillText('9 m³/h',w/2,padY+fs+gap+sub+gap);}
+    tex.needsUpdate=true;const sc=1.05*0.0125;sp.scale.set(w*sc,h*sc,1);};
+  sp.update(false);return sp;}
+function valueSprite(){const cv=document.createElement('canvas');cv.width=280;cv.height=88;const ctx=cv.getContext('2d');const tex=new T.CanvasTexture(cv);tex.anisotropy=8;
+  const sp=new T.Sprite(new T.SpriteMaterial({map:tex,transparent:true,depthTest:false,depthWrite:false}));sp.renderOrder=999;sp.scale.set(1.9,0.6,1);sp.center.set(0.5,0);sp.visible=false;
+  sp.setVal=(top,val,hex)=>{ctx.clearRect(0,0,280,88);const r=16,w=280,h=88;ctx.fillStyle='rgba(8,13,18,0.92)';ctx.beginPath();ctx.moveTo(r,0);ctx.arcTo(w,0,w,h,r);ctx.arcTo(w,h,0,h,r);ctx.arcTo(0,h,0,0,r);ctx.arcTo(0,0,w,0,r);ctx.fill();
+    ctx.strokeStyle=hex;ctx.lineWidth=3;ctx.stroke();ctx.textAlign='center';ctx.fillStyle='#7d8d99';ctx.font='600 20px ui-monospace,monospace';ctx.textBaseline='middle';ctx.fillText(top,140,24);
+    ctx.fillStyle=hex;ctx.font='700 34px ui-monospace,monospace';ctx.fillText(val,140,58);tex.needsUpdate=true;};return sp;}
+function hx(n){return '#'+n.toString(16).padStart(6,'0');}
+
+function cyl(rt,rb,h,seg,mat,o){const g=new T.CylinderGeometry(rt,rb,h,seg||28,1,(o&&o.open)||false,(o&&o.ts)||0,(o&&o.tl)||Math.PI*2);const m=new T.Mesh(g,mat);m.castShadow=true;m.receiveShadow=true;return m;}
+function box(w,h,d,mat){const m=new T.Mesh(new T.BoxGeometry(w,h,d),mat);m.castShadow=true;m.receiveShadow=true;return m;}
+function torus(r,t,mat){const m=new T.Mesh(new T.TorusGeometry(r,t,12,28),mat);m.castShadow=true;return m;}
+function flange(r,mat,thick){return cyl(r,r,thick||0.06,20,mat);}
+
+function rigidPipe(pts,r,mat){const g=new T.Group();
+  for(let i=0;i<pts.length-1;i++){const a=pts[i],b=pts[i+1];const len=a.distanceTo(b);if(len<1e-4)continue;const seg=new T.Mesh(new T.CylinderGeometry(r,r,len,14),mat);
+    seg.position.copy(a).add(b).multiplyScalar(0.5);seg.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),b.clone().sub(a).normalize());seg.castShadow=true;g.add(seg);}
+  for(let i=1;i<pts.length-1;i++){const j=new T.Mesh(new T.SphereGeometry(r*1.18,12,10),mat);j.position.copy(pts[i]);j.castShadow=true;g.add(j);}return g;}
+function plen(P){let l=0;for(let i=0;i<P.length-1;i++)l+=P[i].distanceTo(P[i+1]);return l;}
+const pipes=[];
+function makePipe(meta,raw,opts){opts=opts||{};
+  let P=raw.map(p=>new T.Vector3(p[0],p[1],p[2]));P=P.filter((p,i)=>i===0||p.distanceTo(P[i-1])>1e-4);
+  if(P.length<2)return;const r=opts.r||0.07;
+  const pmat=M.pipe.clone();pmat.depthWrite=false;const grp=rigidPipe(P,r,pmat);scene.add(grp);
+  const len=plen(P);
+  // the liquid core follows the SAME rigid polyline as the pipe — straight segments + filled elbows, never a smoothed hose
+  const path=new T.CurvePath();for(let i=0;i<P.length-1;i++)path.add(new T.LineCurve3(P[i],P[i+1]));
+  const coreMat=new T.MeshStandardMaterial({color:0xffffff,emissive:0xffffff,emissiveIntensity:0.95,roughness:0.3,metalness:0.0,map:FLOW.clone(),envMapIntensity:0.3});
+  coreMat.emissiveMap=coreMat.map;coreMat.map.repeat.set(Math.max(2,Math.round(len*0.9)),1);
+  const coreG=new T.Group();
+  const tube=new T.Mesh(new T.TubeGeometry(path,Math.max(P.length*3,Math.round(len*8)),r*0.82,12,false),coreMat);coreG.add(tube);
+  for(let i=1;i<P.length-1;i++){const jb=new T.Mesh(new T.SphereGeometry(r*0.84,12,10),coreMat);jb.position.copy(P[i]);coreG.add(jb);}
+  coreG.visible=false;coreG.renderOrder=1;scene.add(coreG);
+  pipes.push(Object.assign({grp,wall:grp.children.map(c=>c.material),core:coreG,cmat:coreMat},meta));}
+
+function tank(r,h,liquidHex,labelLines,info,opts){opts=opts||{};const g=new T.Group();
+  const wall=new T.MeshStandardMaterial({color:opts.shell||C.pvc,metalness:0,roughness:0.5,envMapIntensity:0.55,side:T.DoubleSide});xrMats.push({m:wall,op:0.22});
+  const body=cyl(r,r,h,40,wall);body.position.y=h/2+0.9;g.add(body);
+  const dome=new T.Mesh(new T.SphereGeometry(r,40,20,0,Math.PI*2,0,Math.PI*0.5),wall);dome.position.y=h+0.9;dome.castShadow=true;g.add(dome);
+  const bot=new T.Mesh(new T.SphereGeometry(r,40,20,0,Math.PI*2,Math.PI*0.5,Math.PI*0.5),wall);bot.position.y=0.9;g.add(bot);
+  const lh=h*0.66;const lqd=cyl(r*0.94,r*0.94,lh,40,liq(liquidHex,0.55));lqd.position.y=lh/2+0.95;g.add(lqd);
+  for(let i=1;i<3;i++){const b=xr(cyl(r*1.015,r*1.015,0.09,40,M.dark),'solid');b.position.y=0.9+h*i/3;g.add(b);}
+  if(opts.ghs)for(let i=0;i<3;i++){const a0=opts.ghs+i*Math.PI*2/3,sz=1.3,rr=r*1.015+0.012,tl=sz/rr;   // GHS05 on three sides
+    const sg=new T.Mesh(new T.CylinderGeometry(rr,rr,sz,24,1,true,a0-tl/2,tl),ghsMat);sg.position.y=0.9+h*0.5;sg.renderOrder=3;g.add(sg);}
+  for(let a=0;a<4;a++){const ang=a*Math.PI/2+Math.PI/4;const lg=box(0.15,0.9,0.15,M.frp);lg.position.set(Math.cos(ang)*r*0.82,0.45,Math.sin(ang)*r*0.82);g.add(lg);}
+  const na=opts.nozAngle!==undefined?opts.nozAngle:0;
+  const noz=cyl(0.1,0.1,0.6,14,M.pvc);noz.rotation.z=Math.PI/2;noz.rotation.y=na;noz.position.set(Math.cos(na)*(r+0.2),1.25,Math.sin(na)*(r+0.2));g.add(noz);
+  const fl=flange(0.16,M.dark);fl.rotation.z=Math.PI/2;fl.rotation.y=na;fl.position.set(Math.cos(na)*(r+0.05),1.25,Math.sin(na)*(r+0.05));g.add(fl);
+  selectable(g,info);g.userData.lbl=[labelLines,h+1.35,opts.lc||C.accent];return g;}
+
+const ghsMat=(function(){const cv=document.createElement('canvas');cv.width=cv.height=256;const x=cv.getContext('2d');
+  x.translate(128,128);x.rotate(Math.PI/4);x.fillStyle='#ffffff';x.fillRect(-84,-84,168,168);x.lineWidth=13;x.strokeStyle='#e0001b';x.strokeRect(-78,-78,156,156);
+  x.setTransform(1,0,0,1,0,0);x.fillStyle='#111';x.strokeStyle='#111';x.lineWidth=5;x.lineCap='round';
+  [[86,-0.5],[170,0.5]].forEach(t=>{x.save();x.translate(t[0],70);x.rotate(t[1]);x.strokeRect(-9,-24,18,40);x.fillRect(-9,4,18,12);x.restore();});   // two tilted test tubes
+  [[96,98],[93,112],[160,98],[163,112]].forEach(d=>{x.beginPath();x.moveTo(d[0],d[1]-6);x.quadraticCurveTo(d[0]+5,d[1]+3,d[0],d[1]+5);x.quadraticCurveTo(d[0]-5,d[1]+3,d[0],d[1]-6);x.fill();});
+  x.fillRect(62,138,52,13);x.beginPath();x.moveTo(70,138);x.lineTo(80,128);x.lineTo(90,138);x.lineTo(100,130);x.lineTo(108,138);x.fill();   // surface being eaten
+  x.beginPath();x.moveTo(140,152);x.lineTo(140,134);x.quadraticCurveTo(140,126,148,126);x.lineTo(186,126);x.quadraticCurveTo(193,126,193,133);x.lineTo(193,136);   // hand
+  x.lineTo(158,136);x.lineTo(158,152);x.closePath();x.fill();x.fillStyle='#fff';[[150,128],[163,131],[176,128]].forEach(c=>{x.beginPath();x.arc(c[0],c[1],4,0,7);x.fill();});
+  const t=new T.CanvasTexture(cv);t.anisotropy=8;t.encoding=T.sRGBEncoding;
+  return new T.MeshBasicMaterial({map:t,transparent:true,alphaTest:0.05,side:T.FrontSide,toneMapped:false});})();
+function pond(w,d,depth,labelLines,info){const g=new T.Group();const wall=0.5;const mw=new T.MeshStandardMaterial({color:0x27313a,roughness:0.9,metalness:0.1});
+  const floor=box(w,0.3,d,mw);floor.position.y=-depth+0.15;g.add(floor);
+  [[0,(d/2)],[0,-(d/2)]].forEach(p=>{const m=box(w,depth,wall,mw);m.position.set(p[0],-depth/2+0.05,p[1]);g.add(m);});
+  [[(w/2),0],[-(w/2),0]].forEach(p=>{const m=box(wall,depth,d,mw);m.position.set(p[0],-depth/2+0.05,p[1]);g.add(m);});
+  const water=box(w-wall*2,0.06,d-wall*2,liq(ARM.pondColor,0.85));water.position.y=-0.18;water.userData.wave=true;g.add(water);
+  const noz=cyl(0.1,0.1,0.6,14,M.pvc);noz.rotation.z=Math.PI/2;noz.position.set(w/2+0.2,-0.35,d/2-1.0);g.add(noz);
+  selectable(g,info);g.userData.lbl=[labelLines,1.0,C.brine];return g;}
+
+function pump(info,sc){const g=new T.Group();
+  const base=box(1.05,0.15,0.74,M.dark);base.position.y=0.075;g.add(base);
+  const ped=box(0.46,0.28,0.5,M.dark);ped.position.set(0.28,0.29,0);g.add(ped);
+  const motor=cyl(0.26,0.26,0.74,24,M.motor);motor.rotation.z=Math.PI/2;motor.position.set(-0.26,0.56,0);g.add(motor);
+  for(let i=0;i<6;i++){const f=cyl(0.29,0.29,0.02,24,M.dark);f.rotation.z=Math.PI/2;f.position.set(-0.5+i*0.095,0.56,0);g.add(f);}
+  const cowl=cyl(0.2,0.24,0.16,20,M.dark);cowl.rotation.z=Math.PI/2;cowl.position.set(-0.72,0.56,0);g.add(cowl);
+  const guard=box(0.17,0.32,0.32,M.guard);guard.position.set(0.04,0.56,0);g.add(guard);
+  const vol=cyl(0.32,0.32,0.28,28,M.pvc);vol.rotation.x=Math.PI/2;vol.position.set(0.4,0.52,0);g.add(vol);
+  const volR=torus(0.28,0.07,M.pvcD);volR.position.set(0.4,0.52,0.15);g.add(volR);
+  const suc=cyl(0.11,0.11,0.32,14,M.pvc);suc.rotation.x=Math.PI/2;suc.position.set(0.4,0.52,0.32);g.add(suc);
+  const sucF=flange(0.16,M.dark);sucF.rotation.x=Math.PI/2;sucF.position.set(0.4,0.52,0.46);g.add(sucF);
+  const dis=cyl(0.1,0.1,0.38,14,M.pvc);dis.position.set(0.4,0.86,0);g.add(dis);
+  const disF=flange(0.15,M.dark);disF.position.set(0.4,1.05,0);g.add(disF);
+  if(sc)g.scale.setScalar(sc);selectable(g,info);return g;}
+
+function filter(info,sc){const g=new T.Group();
+  const can=cyl(0.3,0.3,0.95,28,M.pvc);can.position.y=0.6;g.add(can);
+  const capT=new T.Mesh(new T.SphereGeometry(0.3,28,14,0,Math.PI*2,0,Math.PI/2),M.pvc);capT.position.y=1.075;capT.castShadow=true;g.add(capT);
+  const capB=new T.Mesh(new T.SphereGeometry(0.3,28,14,0,Math.PI*2,Math.PI/2,Math.PI/2),M.pvc);capB.position.y=0.125;g.add(capB);
+  const ring=cyl(0.34,0.34,0.07,28,M.dark);ring.position.y=0.6;g.add(ring);
+  const legs=box(0.42,0.11,0.42,M.dark);legs.position.y=0.055;g.add(legs);
+  const ni=cyl(0.09,0.09,0.26,12,M.pvc);ni.rotation.x=Math.PI/2;ni.position.set(0,0.32,0.4);g.add(ni);
+  const no=cyl(0.09,0.09,0.26,12,M.pvc);no.rotation.x=Math.PI/2;no.position.set(0,0.88,-0.4);g.add(no);
+  if(sc)g.scale.setScalar(sc);selectable(g,info);return g;}
+
+function instrument(kind,info,sc){const g=new T.Group();
+  const body=cyl(0.18,0.18,0.42,16,M.pvc);body.rotation.z=Math.PI/2;g.add(body);
+  [0.21,-0.21].forEach(x=>{const f=cyl(0.2,0.2,0.05,16,M.dark);f.rotation.z=Math.PI/2;f.position.set(x,0,0);g.add(f);});
+  if(kind==='P'){const dial=cyl(0.16,0.16,0.06,24,M.pvcD);dial.rotation.x=Math.PI/2;dial.position.set(0,0.3,0);g.add(dial);
+    const face=new T.Mesh(new T.CircleGeometry(0.13,24),M.white);face.position.set(0,0.34,0.001);face.rotation.x=-Math.PI/2;g.add(face);
+    const needle=box(0.01,0.1,0.004,new T.MeshBasicMaterial({color:0xcc3333}));needle.position.set(0,0.34,0.01);needle.rotation.x=-Math.PI/2;needle.rotation.z=0.6;g.add(needle);
+    const stem=cyl(0.04,0.04,0.16,8,M.dark);stem.position.set(0,0.18,0);g.add(stem);}
+  else{const disp=box(0.24,0.18,0.05,M.display);disp.position.set(0,0.3,0.12);g.add(disp);const stem=cyl(0.04,0.04,0.14,8,M.dark);stem.position.set(0,0.18,0.06);g.add(stem);}
+  if(sc)g.scale.setScalar(sc);selectable(g,info);return g;}
+
+function analyzer(info,sc){const g=new T.Group();
+  const tee=cyl(0.15,0.15,0.3,16,M.pvc);g.add(tee);
+  [0.16,-0.16].forEach(z=>{const f=cyl(0.18,0.18,0.05,16,M.dark);f.rotation.x=Math.PI/2;f.position.set(0,0,z);g.add(f);});
+  const probe=cyl(0.04,0.04,0.46,10,M.pvcD);probe.position.y=0.3;g.add(probe);
+  const head=box(0.28,0.32,0.18,M.dark);head.position.y=0.66;g.add(head);
+  const disp=box(0.2,0.16,0.03,M.display);disp.position.set(0,0.68,0.1);g.add(disp);
+  if(sc)g.scale.setScalar(sc);selectable(g,info);return g;}
+
+function valveUnit(info,sc){const g=new T.Group();
+  const bodyH=cyl(0.16,0.16,0.6,20,M.pvc);bodyH.rotation.z=Math.PI/2;g.add(bodyH);
+  const ball=new T.Mesh(new T.SphereGeometry(0.22,24,18),M.pvcD);g.add(ball);
+  [0.3,-0.3].forEach(x=>{const f=cyl(0.2,0.2,0.05,18,M.dark);f.rotation.z=Math.PI/2;f.position.set(x,0,0);g.add(f);});
+  const pz=cyl(0.11,0.11,0.3,14,M.pvc);pz.rotation.x=Math.PI/2;pz.position.set(0,0,0.26);g.add(pz);
+  const pzF=cyl(0.15,0.15,0.05,14,M.dark);pzF.rotation.x=Math.PI/2;pzF.position.set(0,0,0.4);g.add(pzF);
+  const stem=cyl(0.06,0.06,0.22,10,M.dark);stem.position.y=0.3;g.add(stem);
+  const actMat=new T.MeshStandardMaterial({color:0xe2a23a,metalness:0.45,roughness:0.45,envMapIntensity:0.7});
+  const act=new T.Mesh(new T.BoxGeometry(0.4,0.34,0.36),actMat);act.position.y=0.56;act.castShadow=true;g.add(act);g.userData.act=act;
+  const ind=cyl(0.13,0.13,0.03,16,M.white);ind.position.y=0.76;g.add(ind);
+  if(sc)g.scale.setScalar(sc);selectable(g,info);return g;}
+
+/* radial-flow column (~20 L), flat top, quarter cutaway.
+   Nozzles: top-centre = inlet (brine line + service line tee in, every step runs top → down);
+            bottom-centre = the single outlet line to the battery. */
+function column(name,info){const g=new T.Group();
+  const R=0.34,H=2.4,y0=0.55,top=y0+H;const cs=Math.PI*0.05,cl=Math.PI*1.5;
+  const ring=cyl(0.44,0.44,0.06,28,M.dark);ring.position.y=0.03;g.add(ring);
+  for(let a=0;a<3;a++){const ang=a*Math.PI*2/3+0.4;const lg=box(0.06,y0,0.06,M.dark);lg.position.set(Math.cos(ang)*0.3,y0/2,Math.sin(ang)*0.3);g.add(lg);}
+  const shell=xr(cyl(R,R,H,48,M.glass,{open:true,ts:cs,tl:cl}),'cut');shell.position.y=y0+H/2;g.add(shell);
+  const lid=xr(cyl(R,R,0.1,48,M.pvcD,{ts:cs,tl:cl}),'cut');lid.position.y=top+0.05;g.add(lid);
+  const solid=xr(cyl(R,R,H,48,M.colBody,{open:true}),'solid');solid.position.y=y0+H/2;g.add(solid);
+  const lidS=xr(cyl(R,R,0.1,48,M.pvcD),'solid');lidS.position.y=top+0.05;g.add(lidS);
+  const rimT=cyl(R+0.05,R+0.05,0.08,48,M.pvcD);rimT.position.y=top;g.add(rimT);
+  const fbot=cyl(R+0.05,R+0.05,0.08,48,M.pvcD);fbot.position.y=y0;g.add(fbot);
+  const botPlate=cyl(R,R*0.5,0.18,48,M.pvcD);botPlate.position.y=y0-0.04;g.add(botPlate);
+  const inner=0.15,wall=0.13,outer=inner+wall,bedH=H*0.82,by=y0+0.1;
+  const prof=[new T.Vector2(inner,0),new T.Vector2(outer,0),new T.Vector2(outer,bedH),new T.Vector2(inner,bedH),new T.Vector2(inner,0)];
+  const bed=new T.Mesh(new T.LatheGeometry(prof,40,cs,cl),M.sorbent);bed.position.y=by;bed.castShadow=true;g.add(bed);
+  const faceMat=new T.MeshStandardMaterial({color:0x0c0c0c,roughness:0.97,side:T.DoubleSide,map:grainTex()});
+  [cs,cs+cl].forEach(a=>{const f=new T.Mesh(new T.PlaneGeometry(wall,bedH),faceMat);f.position.set(Math.cos(a)*(inner+wall/2),by+bedH/2,Math.sin(a)*(inner+wall/2));f.rotation.y=-a+Math.PI/2;g.add(f);});
+  const coll=cyl(inner*0.55,inner*0.55,bedH+0.2,18,M.collector);coll.position.y=by+bedH/2;g.add(coll);
+  for(let r=0;r<3;r++)for(let a=0;a<5;a++){const hh=new T.Mesh(new T.CircleGeometry(0.014,8),new T.MeshBasicMaterial({color:0x0c1418}));const ang=a/5*Math.PI*2;
+    hh.position.set(Math.cos(ang)*inner*0.56,by+0.45+r*(bedH-0.7)/2,Math.sin(ang)*inner*0.56);hh.lookAt(0,hh.position.y,0);g.add(hh);}
+  const distr=cyl(R*0.92,R*0.92,bedH,40,M.screen,{open:true,ts:cs,tl:cl});distr.position.y=by+bedH/2;g.add(distr);
+  const arrMat=new T.MeshBasicMaterial({color:0x21d4c4});
+  for(let i=0;i<3;i++){const aAng=cs-0.22;const yy=by+bedH*(0.3+i*0.25);const cone=xr(new T.Mesh(new T.ConeGeometry(0.05,0.16,10),arrMat),'cut');
+    cone.position.set(Math.cos(aAng)*(outer+0.06),yy,Math.sin(aAng)*(outer+0.06));cone.lookAt(0,yy,0);cone.rotateX(Math.PI/2);g.add(cone);}
+  // ONE centred top nozzle (all inlets) + ONE centred bottom nozzle (the outlet line)
+  const tnoz=cyl(0.09,0.09,0.36,16,M.pvc);tnoz.position.set(0,top+0.14,0);g.add(tnoz);
+  const tflg=flange(0.16,M.dark,0.05);tflg.position.set(0,top+0.3,0);g.add(tflg);
+  const bnoz=cyl(0.09,0.09,0.34,16,M.pvc);bnoz.position.set(0,y0-0.14,0);g.add(bnoz);
+  const bflg=flange(0.16,M.dark,0.05);bflg.position.set(0,y0-0.29,0);g.add(bflg);
+  // internal feed path: downcomer from the top nozzle to a distributor ring that sprays the outer annulus (radial-inward flow)
+  const dcom=cyl(0.05,0.05,0.55,10,M.pvc);dcom.position.set(0,top-0.2,0);g.add(dcom);
+  const ringMat=new T.MeshStandardMaterial({color:0x9ec7d6,metalness:0,roughness:0.5});
+  const dring=new T.Mesh(new T.TorusGeometry(outer+0.02,0.02,8,30,cl),ringMat);dring.rotation.x=Math.PI/2;dring.rotation.z=-cs;dring.position.y=by+bedH-0.06;g.add(dring);
+  const dfeed=cyl(0.03,0.03,outer,8,ringMat);dfeed.rotation.z=Math.PI/2;dfeed.position.set(Math.cos(cs+0.2)*outer*0.5,by+bedH-0.06,Math.sin(cs+0.2)*outer*0.5);dfeed.rotation.y=-(cs+0.2);g.add(dfeed);
+  // XtraLit branding printed onto the column body — curved band hugging the shell (no flat tag)
+  {const bMidY=y0+H*0.52;
+   const band=new T.Mesh(new T.CylinderGeometry(R+0.004,R+0.004,0.205,40,1,true,0.40,1.30),new T.MeshStandardMaterial({color:0xeef1ee,metalness:0.25,roughness:0.55,side:T.DoubleSide,envMapIntensity:0.6}));
+   band.position.y=bMidY;g.add(band);
+   const dec=new T.Mesh(new T.CylinderGeometry(R+0.009,R+0.009,0.145,40,1,true,0.47,1.16),logoDecalMat);
+   dec.position.y=bMidY;dec.renderOrder=3;g.add(dec);}
+  selectable(g,info);
+  g.userData.TOP=new T.Vector3(0,top+0.32,0);   // centred top nozzle
+  g.userData.BOT=new T.Vector3(0,y0-0.31,0);     // centred bottom nozzle
+  g.userData.lbl=[[name,'Radial column'],top+0.62,C.accent];
+  return g;}
+
+function plc(info){const g=new T.Group();
+  const body=new T.MeshStandardMaterial({color:0x2b3742,metalness:0.55,roughness:0.5});
+  const cab=new T.Mesh(new T.BoxGeometry(1.05,1.5,0.5),body);cab.position.y=1.45;g.add(cab);
+  [[-0.45,-0.18],[0.45,-0.18],[-0.45,0.18],[0.45,0.18]].forEach(p=>{const l=cyl(0.04,0.04,0.7,8,M.pvc);l.position.set(p[0],0.35,p[1]);g.add(l);});
+  const scr=new T.Mesh(new T.PlaneGeometry(0.66,0.44),new T.MeshStandardMaterial({color:0x07202e,emissive:0x1f7fc0,emissiveIntensity:0.7,roughness:0.3}));scr.position.set(0,1.75,0.252);g.add(scr);
+  const lcol=new T.MeshBasicMaterial({color:0x8fe3ff});for(let i=0;i<3;i++){const ln=new T.Mesh(new T.PlaneGeometry(0.5,0.02),lcol);ln.position.set(-0.02,1.86-i*0.085,0.254);g.add(ln);}
+  const leds=[];const lc=[0x39d98a,0xf2c12e,0x4fb3e6];for(let i=0;i<3;i++){const m=new T.MeshStandardMaterial({color:lc[i],emissive:lc[i],emissiveIntensity:1.0});const d=new T.Mesh(new T.SphereGeometry(0.038,12,12),m);d.position.set(-0.32+i*0.18,1.2,0.252);g.add(d);leds.push(m);}
+  g.userData.leds=leds;g.userData.lbl=[['PLC','autonomous control'],2.55,C.accent];
+  g.traverse(o=>{if(o.isMesh)o.castShadow=true;});selectable(g,info);return g;}
+
+function human(info){const g=new T.Group();
+  const skin=new T.MeshStandardMaterial({color:0xc98b63,roughness:0.75});
+  const suit=new T.MeshStandardMaterial({color:0x2f6fb0,roughness:0.7});
+  const hat=new T.MeshStandardMaterial({color:0xf2c12e,roughness:0.5});
+  const boot=new T.MeshStandardMaterial({color:0x202327,roughness:0.85});
+  [-0.09,0.09].forEach(dx=>{const leg=cyl(0.062,0.07,0.62,12,suit);leg.position.set(dx,0.36,0);g.add(leg);const b=cyl(0.085,0.085,0.1,10,boot);b.position.set(dx,0.05,0.03);g.add(b);});
+  const torso=cyl(0.17,0.2,0.5,16,suit);torso.position.set(0,0.92,0);g.add(torso);
+  const belt=cyl(0.205,0.205,0.06,16,boot);belt.position.set(0,0.7,0);g.add(belt);
+  [-0.235,0.235].forEach(dx=>{const arm=cyl(0.052,0.06,0.46,12,suit);arm.position.set(dx,0.9,0);arm.rotation.z=dx>0?0.13:-0.13;g.add(arm);});
+  const neck=cyl(0.05,0.05,0.08,8,skin);neck.position.set(0,1.2,0);g.add(neck);
+  const head=new T.Mesh(new T.SphereGeometry(0.12,18,16),skin);head.position.set(0,1.33,0);g.add(head);
+  const cap=new T.Mesh(new T.SphereGeometry(0.135,18,12,0,Math.PI*2,0,Math.PI*0.5),hat);cap.position.set(0,1.36,0);g.add(cap);
+  const brim=cyl(0.175,0.175,0.02,18,hat);brim.position.set(0,1.35,0.03);g.add(brim);
+  g.traverse(o=>{if(o.isMesh)o.castShadow=true;});
+  selectable(g,info);return g;}
+
+/* ---------- SKID PRIMITIVES ---------- */
+/* actuated ball valve — compact version of valveUnit, body along local X, actuator up; actuator colour = open medium */
+function avalve(info,sc){const g=new T.Group();
+  const body=cyl(0.16,0.16,0.6,18,M.pvc);body.rotation.z=Math.PI/2;g.add(body);
+  const ball=new T.Mesh(new T.SphereGeometry(0.22,20,14),M.pvcD);g.add(ball);
+  [0.3,-0.3].forEach(x=>{const f=cyl(0.2,0.2,0.05,18,M.dark);f.rotation.z=Math.PI/2;f.position.set(x,0,0);g.add(f);});
+  const stem=cyl(0.06,0.06,0.22,10,M.dark);stem.position.y=0.3;g.add(stem);
+  const act=new T.Mesh(new T.BoxGeometry(0.42,0.34,0.36),new T.MeshStandardMaterial({color:0x55606a,metalness:0.45,roughness:0.45,envMapIntensity:0.7}));
+  act.position.y=0.56;act.castShadow=true;g.add(act);g.userData.act=act;
+  const ind=cyl(0.13,0.13,0.03,16,M.white);ind.position.y=0.745;g.add(ind);
+  if(sc)g.scale.setScalar(sc);selectable(g,info);return g;}
+/* inline filter housing on the prep train — nozzles on ±X at world y 1.6 */
+function housing(kind,band,info){const g=new T.Group();const NY=1.6-DY;
+  const pad=box(0.5,0.08,0.5,M.dark);pad.position.y=0.04;g.add(pad);
+  let br=0.21;
+  if(kind==='strainer'){br=0.28;
+    const b=cyl(0.27,0.27,0.62,28,M.pvc);b.position.y=NY;g.add(b);
+    const cov=cyl(0.33,0.33,0.08,28,M.dark);cov.position.y=NY+0.35;g.add(cov);
+    for(let i=0;i<8;i++){const a=i/8*Math.PI*2;const bo=cyl(0.02,0.02,0.1,6,M.pvcD);bo.position.set(Math.cos(a)*0.29,NY+0.38,Math.sin(a)*0.29);g.add(bo);}
+    const knob=cyl(0.06,0.06,0.16,10,M.dark);knob.position.y=NY+0.47;g.add(knob);
+    const sump=cyl(0.27,0.12,0.3,24,M.pvc);sump.position.y=NY-0.46;g.add(sump);
+    const leg=cyl(0.05,0.05,0.46,8,M.dark);leg.position.y=0.31;g.add(leg);}
+  else{const b=cyl(0.2,0.2,1.3,28,M.pvc);b.position.y=NY-0.05;g.add(b);
+    const dome=new T.Mesh(new T.SphereGeometry(0.2,24,12,0,Math.PI*2,0,Math.PI/2),M.pvc);dome.position.y=NY+0.6;dome.castShadow=true;g.add(dome);
+    const clamp=cyl(0.24,0.24,0.08,28,M.dark);clamp.position.y=NY+0.45;g.add(clamp);
+    const vent=cyl(0.03,0.03,0.14,8,M.dark);vent.position.y=NY+0.84;g.add(vent);
+    const leg=cyl(0.05,0.05,0.37,8,M.dark);leg.position.y=0.265;g.add(leg);}
+  const bd=cyl(br+0.012,br+0.012,0.07,28,new T.MeshStandardMaterial({color:band,metalness:0.4,roughness:0.5,emissive:band,emissiveIntensity:0.15}));bd.position.y=NY-0.2;g.add(bd);
+  [-1,1].forEach(s=>{const n=cyl(0.075,0.075,0.3,12,M.pvc);n.rotation.z=Math.PI/2;n.position.set(s*(br+0.08),NY,0);g.add(n);
+    const f=flange(0.12,M.dark,0.04);f.rotation.z=Math.PI/2;f.position.set(s*(br+0.22),NY,0);g.add(f);});
+  selectable(g,info);return g;}
+/* ultrafiltration block: two horizontal modules on a frame; lower module sits in the train at world y 1.6 */
+function ufBlock(info){const g=new T.Group();const NY=1.6-DY;
+  const base=box(1.9,0.08,0.7,M.dark);base.position.y=0.04;g.add(base);
+  [[-0.8,-0.3],[0.8,-0.3],[-0.8,0.3],[0.8,0.3]].forEach(p=>{const po=box(0.06,NY+0.62,0.06,M.dark);po.position.set(p[0],(NY+0.62)/2+0.08,p[1]);g.add(po);});
+  const modM=new T.MeshStandardMaterial({color:0xeef2f0,metalness:0.15,roughness:0.45});
+  [NY,NY+0.42].forEach(y=>{const m=cyl(0.16,0.16,1.6,28,modM);m.rotation.z=Math.PI/2;m.position.y=y;g.add(m);
+    [-0.83,0.83].forEach(x=>{const c=cyl(0.185,0.185,0.08,28,M.dark);c.rotation.z=Math.PI/2;c.position.set(x,y,0);g.add(c);});
+    [-0.5,0,0.5].forEach(x=>{const r=cyl(0.172,0.172,0.04,28,new T.MeshStandardMaterial({color:C.accent,metalness:0.3,roughness:0.5}));r.rotation.z=Math.PI/2;r.position.set(x,y,0);g.add(r);});});
+  const link=cyl(0.05,0.05,0.42,10,M.pvc);link.position.set(0.9,NY+0.21,0);g.add(link);
+  const conc=cyl(0.06,0.06,0.2,10,M.pvc);conc.rotation.x=Math.PI/2;conc.position.set(0.5,NY,-0.17);g.add(conc);
+  selectable(g,info);return g;}
+/* benchtop-style NMR lithium analyser: cabinet + magnet drum + screen; display value via a valueSprite in labelGroup */
+function nmrUnit(info){const g=new T.Group();
+  const cab=box(0.9,1.3,0.6,new T.MeshStandardMaterial({color:0xdfe5ea,metalness:0.3,roughness:0.5}));cab.position.y=0.65;g.add(cab);
+  const mag=cyl(0.34,0.34,0.52,32,new T.MeshStandardMaterial({color:0x2f6fb0,metalness:0.5,roughness:0.4}));mag.rotation.x=Math.PI/2;mag.position.set(0,1.64,0);g.add(mag);
+  const bore=cyl(0.12,0.12,0.54,20,M.dark);bore.rotation.x=Math.PI/2;bore.position.set(0,1.64,0);g.add(bore);
+  const scr=new T.Mesh(new T.PlaneGeometry(0.5,0.3),M.display);scr.position.set(0,0.95,0.302);g.add(scr);
+  const led=new T.Mesh(new T.SphereGeometry(0.03,10,10),new T.MeshStandardMaterial({color:0x39d98a,emissive:0x39d98a,emissiveIntensity:1}));led.position.set(0.32,0.7,0.31);g.add(led);
+  selectable(g,info);return g;}
+/* sample selector: manifold block with 8 solenoid valves, 4 inlets per side at world y 0.6, outlet on +X */
+function samplerUnit(info){const g=new T.Group();
+  const blk=box(0.6,0.4,0.6,M.pvcD);blk.position.y=0.25;g.add(blk);
+  const coilM=new T.MeshStandardMaterial({color:0x2b3742,metalness:0.4,roughness:0.5});
+  [-0.15,0.15].forEach(x=>[-0.225,-0.075,0.075,0.225].forEach(z=>{const st=cyl(0.035,0.035,0.1,10,M.pvc);st.position.set(x,0.5,z);g.add(st);
+    const coil=box(0.09,0.11,0.09,coilM);coil.position.set(x,0.6,z);g.add(coil);}));
+  const out=cyl(0.04,0.04,0.1,10,M.pvc);out.rotation.z=Math.PI/2;out.position.set(0.35,0.15,0);g.add(out);
+  selectable(g,info);return g;}
+
+/* ---------- LAYOUT — one UF-style skid: two banks of four radial columns either side of a central valve battery.
+   X runs along the skid: inlet end (−X) = brine prep train + P-201 / P-301; outlet end (+X) = sample selector, NMR-out, EC / pH, PLC.
+   Feed headers (brine, water, acid) run high, collect headers (spent, eluate, sulfate) run low. Every column ties in with 6 actuated valves,
+   all in the battery at the headers: brine → brine line; water / acid → one service line; outlet line → spent / eluate / sulfate.
+   The column itself sees three pipes only: brine line + service line on top (tee at the nozzle), outlet line below. ---------- */
+const DY=0.45;                                   // skid deck top
+const SKX0=-13.2,SKX1=7.0,SKZ=3.2;               // skid frame footprint
+const COLX=[-1.5,-0.5,0.5,1.5];                  // tight column pitch along the skid
+const ZC=2.1;                                    // bank centre-lines at z = ∓ZC (bank A −Z: C1–C4, bank B +Z: C5–C8)
+const CB=1.15;                                   // column base, on the bank stand
+const YB=0.7,YS=4.6;                             // outlet-line run under the bank / top run of the brine + service lines
+const TOPN=CB+3.27,BOTN=CB+0.24;                 // column top / bottom nozzle faces
+const ZH=0.9,ZV=1.3,ZO=1.7,XC=3.6;                             // header stack |z| (all six headers of a bank stacked on one axis) / branch riser |z| / spent & sulfate outlet lanes |z| / x of the stacked collect cross-ties
+const HDR={brine:{y:3.9,z:ZH,x0:-2.4},water:{y:3.6,z:ZH,x0:-2.4},acid:{y:3.3,z:ZH,x0:-2.4},
+  spent:{y:1.25,z:ZH,x1:XC},sulfate:{y:1.85,z:ZH,x1:XC},eluate:{y:1.55,z:ZH,x1:XC}};
+const HX0=-1.95,HX1=1.95;                        // battery span of the header runs
+// the one source of the per-column layout: top = inlet role; line = the pipe it feeds (roles sharing a line join it after their valves);
+// dx = that line's x off the column axis (brine −, service +, outlet riser 0); vz = valve |z| on its branch (alternates to clear stacked valves)
+const ROLES={brineIn:{h:'brine',top:true,line:'brine',dx:-0.3,vz:1.1,name:'Brine-in'},
+  waterIn:{h:'water',top:true,line:'service',dx:0.3,vz:1.0,name:'Water-in'},
+  acidIn:{h:'acid',top:true,line:'service',dx:0.3,vz:1.19,name:'Acid-in'},
+  spentOut:{h:'spent',top:false,dx:0,vz:1.0,name:'Spent-out'},
+  eluateOut:{h:'eluate',top:false,dx:0,vz:1.19,name:'Eluate-out'},
+  sulfateOut:{h:'sulfate',top:false,dx:0,vz:1.0,name:'Sulfate-out'}};
+const ROLE_KEYS=Object.keys(ROLES);
+const ROLE_DUTY={brineIn:'brine header → brine line → column top (sorption, top → down)',waterIn:'water header → service line → column top (washes 1 & 2, top → down)',
+  acidIn:'acid header → service line → column top (0.8 M H₂SO₄, top → down)',spentOut:'outlet line → spent-brine header (raffinate + water wash 1)',
+  eluateOut:'outlet line → eluate header (desorption Fr-2 / Fr-3)',sulfateOut:'outlet line → sulfate header (Fr-1 / Fr-4 / Fr-5 + water wash 2)'};
+const cols=[],valves=[],fts=[];
+
+/* skid frame on feet */
+(function(){const g=new T.Group();const gal=M.frp;
+  const L=SKX1-SKX0,cx=(SKX0+SKX1)/2;
+  const plate=box(L,0.03,SKZ*2,M.frpDeck);plate.position.set(cx,DY-0.015,0);g.add(plate);
+  [-SKZ,SKZ].forEach(z=>{const b=box(L,0.22,0.2,gal);b.position.set(cx,DY-0.11,z);g.add(b);});
+  for(let i=0;i<=12;i++){const b=box(0.16,0.2,SKZ*2,gal);b.position.set(SKX0+L*i/12,DY-0.12,0);g.add(b);}
+  for(let i=0;i<=6;i++){const x=SKX0+0.2+(L-0.4)*i/6;[-SKZ+0.12,SKZ-0.12].forEach(z=>{const f=box(0.3,DY-0.22,0.3,M.frp);f.position.set(x,(DY-0.22)/2,z);g.add(f);});}
+  selectable(g,{color:C.accent,title:'Skid Frame',code:'one skid · '+(SKX1-SKX0).toFixed(0)+' × '+(SKZ*2).toFixed(1)+' m',body:'Everything process-side sits on <b>one FRP skid</b> (glass-fibre pultruded profiles and grating — no steel near the acid), built like a factory <b>ultrafiltration unit</b>: brine pump P-101, the four-stage filtration train, water pump P-201, acid pump P-301, both banks of columns, the valve battery, both NMR lithium analysers, EC / pH and the PLC cabinet. The six tanks stand off the skid.<br>All pipework, fittings, flanges and valve bodies are <b>plastic — PVC-U / PP</b>: the brine, the 0.8 M H₂SO₄ and the acidic eluate are corrosive.'});
+  scene.add(g);})();
+
+/* two bank stands (rails + posts) */
+[-1,1].forEach(s=>{const g=new T.Group();
+  [-0.42,0.42].forEach(o=>{const r=box(4.0,0.1,0.08,M.frp);r.position.set(0,CB-0.05,s*ZC+o);g.add(r);
+    [-2,-1,0,1,2].forEach(x=>{const p=box(0.06,CB-0.1-DY,0.06,M.frp);p.position.set(x,DY+(CB-0.1-DY)/2,s*ZC+o);g.add(p);});});
+  selectable(g,{color:C.accent,title:'Column Bank '+(s<0?'A':'B')+' Stand',code:s<0?'C1–C4':'C5–C8',body:'Low FRP stand carrying a <b>tight row of four columns</b>. Each column\'s bottom nozzle drops through the stand to its outlet line, which runs under the bank into the valve battery.'});
+  scene.add(g);});
+
+/* battery portal frames (between column positions) — they also carry the cable tray */
+[-1,0,1,2].forEach(x=>{const g=new T.Group();
+  [-1.05,1.05].forEach(z=>{const p=box(0.06,4.24-DY,0.06,M.frp);p.position.set(x,DY+(4.24-DY)/2,z);g.add(p);});
+  [1.12,3.2,4.22].forEach(y=>{const b=box(0.06,0.06,2.16,M.frp);b.position.set(x,y,0);g.add(b);});
+  selectable(g,{color:C.accent,title:'Valve Battery Frame',code:'header supports',body:'FRP portal frames of the <b>central valve battery</b>. Feed headers (brine, water, acid) run high, collect headers (spent, eluate, sulfate) run low; <b>all 48 actuated valves</b> sit here, on short branches off the headers. The cable tray rides on top.'});
+  scene.add(g);});
+
+/* columns + per-column instruments and valves */
+for(let i=0;i<8;i++){const n=i+1,k=i%4,s=i<4?-1:1,x=COLX[k],zc=s*ZC;
+  const col=column('C'+n,{color:C.accent,title:'Sorption Column C'+n,code:'radial-flow vessel · ~20 L · bank '+(s<0?'A':'B'),
+    body:'<b>Radial-flow</b> ion-sieve column (press <b>Transparent</b> for the quarter-section). <b>One nozzle per end.</b><br>• <b>Sorption:</b> brine enters the top nozzle → distributor ring → <b>radial-inward</b> through the bed → out the bottom.<br>• <b>Washes and desorption</b> run the same way, <b>top → down</b>: water or acid comes down the service line into the same top nozzle; eluate and tails leave the bottom.<br><b>Three pipes per column:</b> brine line and service line on top (tee at the nozzle), one outlet line below. Its <b>six actuated valves</b> sit in the battery at the headers, not on the column: brine → brine line; water or acid → service line; outlet line → spent, eluate or sulfate header.<br><br><b>Bed:</b> 20 kg LMO (λ-MnO₂), 5 cm radial layer, <b>~20 L</b>. <b>10–11 mg/g Li</b> in <b>'+ARM.sorbTxt+'</b> on '+ARM.ppm+' ppm feed, recovery <b>&gt;85%</b>. Phase-shifted by '+(i)+'/8 of the cycle against C1.'});
+  col.position.set(x,CB,zc);col.userData.n=n;col.userData.bank=s<0?'A':'B';scene.add(col);cols.push(col);
+  const ft=instrument('F',{color:C.brine,title:'Flowmeter FT-'+n,code:'magnetic · column C'+n,body:'<b>Magnetic flowmeter</b> on column C'+n+'\'s outlet line, under the bank, with a local display and a <b>4–20 mA signal to the PLC</b>. Every step leaves through the outlet line, so it reads the column flow in every step (9 m³/h on sorption and washes).'},0.55);
+  ft.rotation.y=Math.PI/2;ft.position.set(x,YB,s*1.5);scene.add(ft);fts.push(ft);
+  const vs={};
+  ROLE_KEYS.forEach(r=>{const R=ROLES[r];
+    const v=avalve({color:C.accent,title:'Valve '+R.name+' · C'+n,code:'actuated · PLC-controlled',body:'<b>Actuated ball valve</b>, PLC-controlled, in the valve battery on column C'+n+'\'s '+R.h+'-header branch.<br>Duty: <b>'+ROLE_DUTY[r]+'</b>.<br>Actuator colour = medium when open, grey when closed.'},0.32);
+    v.rotation.y=Math.PI/2;v.position.set(x+R.dx,HDR[R.h].y,s*R.vz);v.userData.col=i;v.userData.role=r;scene.add(v);vs[r]=v;});
+  valves.push(vs);}
+
+/* ---- brine prep train (inlet end, z = 0): P-101 → 50 µm strainer → 10 µm → 1 µm cartridges → UF → PT-101 → NMR-in ---- */
+const p101=pump({color:C.brine,title:'Brine Pump P-101',code:'one feed pump · '+ARM.p101Txt,body:'The skid\'s <b>single brine pump</b>. Draws '+ARM.site+' brine from the accumulation pond through the filtration train into the brine header; the valve battery splits it at <b>'+ARM.brinePerCol+' m³/h</b> per sorbing column, so its flow follows the carousel: <b>'+ARM.p101Txt+'</b>. It never stops — some column is always on sorption.'},0.9);
+p101.rotation.y=-Math.PI/2;p101.position.set(-12.0,DY,-0.36);scene.add(p101);
+const strainer=housing('strainer',0xff9f43,{color:C.brine,title:'Mesh Strainer 50 µm',code:'filtration stage 1 · 50 µm',body:'<b>Self-cleaning mesh strainer, 50 µm.</b> First of four filtration stages — catches sand, shells and algae mats from the pond.'});
+strainer.position.set(-10.6,DY,0);scene.add(strainer);
+const cart10=housing('cartridge',0xffd23f,{color:C.brine,title:'Cartridge Filter 10 µm',code:'filtration stage 2 · 10 µm',body:'<b>Cartridge filter, 10 µm</b> nominal. Second stage of the brine train.'});
+cart10.position.set(-9.4,DY,0);scene.add(cart10);
+const cart1=housing('cartridge',0x4fe0b0,{color:C.brine,title:'Cartridge Filter 1 µm',code:'filtration stage 3 · 1 µm',body:'<b>Cartridge filter, 1 µm</b> absolute. Third stage — polishes the brine ahead of ultrafiltration.'});
+cart1.position.set(-8.2,DY,0);scene.add(cart1);
+const ufU=ufBlock({color:C.brine,title:'Ultrafiltration Unit UF',code:'filtration stage 4 · UF',body:'<b>Ultrafiltration</b> — last filtration stage, two hollow-fibre modules. Permeate continues to PT-101 and NMR-in; <b>concentrate and backwash</b> go to the Spent Brine tank.'});
+ufU.position.set(-6.0,DY,0);scene.add(ufU);
+const pt101=instrument('P',{color:C.brine,title:'Pressure Transmitter PT-101',code:'brine header pressure',body:'<b>PT-101</b> after the UF unit, signal to the PLC. A rising differential across the train tells the PLC to <b>backwash the UF</b> and flags the cartridges for change-out.'},0.8);
+pt101.position.set(-4.4,1.6,0);scene.add(pt101);
+const nmrIn=nmrUnit({color:C.brine,title:'NMR Lithium Analyser NMR-in',code:'feed Li · on-line',body:'<b>On-line NMR lithium analyser</b> on the brine line after UF. Reads the <b>feed Li</b> (~'+ARM.ppm+' ppm) continuously; the PLC uses it with NMR-out to track breakthrough and recovery.'});
+nmrIn.position.set(-3.6,DY,0.95);nmrIn.rotation.y=Math.PI;scene.add(nmrIn);
+const p201=pump({color:C.wash,title:'Water Pump P-201',code:'both water washes',body:'<b>Water pump</b> for both washes: wash 1 after sorption and wash 2 after desorption. Feeds the water header of the valve battery at '+ARM.washPerCol+' m³/h per washing column — 0 to '+WASH_MAX+' columns at once, <b>0–'+P201_MAX+' m³/h</b>.'},0.9);
+p201.rotation.y=Math.PI;p201.position.set(-11.14,DY,-2.2);scene.add(p201);
+const p301=pump({color:C.acid,title:'Acid Pump P-301',code:'desorption · 0.8 M H₂SO₄',body:'<b>Acid pump</b>. Feeds 0.8 M H₂SO₄ into the acid header; the battery sends it down the service line into the <b>top</b> of every column that is desorbing at the time (top → down, like sorption) — up to <b>'+DES_MAX+' columns</b> at once.'},0.9);
+p301.position.set(-11.86,DY,2.2);scene.add(p301);
+
+/* ---- outlet end: sample selector → NMR-out, EC / pH on the collect lines, PLC ---- */
+const selector=samplerUnit({color:C.brine,title:'Sample Selector',code:'8 sample lines → NMR-out',body:'<b>Sample selector</b>: a thin sample line taps every column\'s <b>outlet line in the battery</b>, next to its outlet valves, and runs under the collect headers to its own solenoid valve. The PLC opens one at a time and steps through the columns on sorption, so NMR-out reads each column\'s outlet Li in turn.'});
+selector.position.set(2.35,DY,0);scene.add(selector);
+const nmrOut=nmrUnit({color:C.brine,title:'NMR Lithium Analyser NMR-out',code:'column outlet Li · via selector',body:'<b>On-line NMR lithium analyser</b> on the sample selector. Shows the <b>outlet Li of the column being sampled</b>; the PLC stops a column\'s sorption on breakthrough.'});
+nmrOut.rotation.y=Math.PI/2;nmrOut.position.set(3.05,DY,0);scene.add(nmrOut);
+const ecMeter=analyzer({color:C.wash,title:'EC-meter EC-101',code:'conductivity · spent header',body:'<b>Conductivity (EC) meter</b> on the spent-brine collect line. Ends <b>water wash 1</b>: washing continues until the conductivity drops to set-point.'},0.85);
+ecMeter.rotation.y=Math.PI/2;ecMeter.position.set(6.4,HDR.spent.y,-ZO);scene.add(ecMeter);
+const phMeter=analyzer({color:C.wash2,title:'pH-meter pH-101',code:'pH · sulfate header',body:'<b>pH meter</b> on the sulfate collect line. Ends <b>water wash 2</b>: fresh water runs until the outlet pH is back above 6.'},0.85);
+phMeter.rotation.y=Math.PI/2;phMeter.position.set(6.4,HDR.sulfate.y,ZO);scene.add(phMeter);
+const plcUnit=plc({color:C.accent,title:'PLC Control Cabinet',code:'autonomous · skid-mounted',body:'The skid runs <b>autonomously</b> under a <b>PLC</b>: it phases the eight columns, drives the <b>48 actuated valves</b> of the battery (6 per column) (cable tray along the battery), runs P-101 / P-201 / P-301, and reads FT-1…FT-8, PT-101, NMR-in, NMR-out, EC and pH.<br>Sorption <b>'+ARM.sorbTxt+'</b> per column, ended early on breakthrough; regeneration (wash 1, five-fraction desorption, wash 2) a further <b>'+(ARM.P-ARM.dur.sorption).toFixed(2)+' h</b>. Cycle <b>'+ARM.P.toFixed(2)+' h</b>, neighbours shifted by P/8 → <b>~'+ARM.cyclesDay+' cycles/day</b>, ~9 kg Li₂CO₃ per cycle (~'+ARM.liDay+' kg/day) on ~'+ARM.brineDay+' m³/day of brine.'});
+plcUnit.rotation.y=-Math.PI/2;plcUnit.position.set(4.8,DY,2.6);scene.add(plcUnit);
+
+/* cable tray: PLC → along the battery, with a branch between every column pair to the valve actuators */
+(function(){const g=new T.Group();const tm=M.frp;const cm=new T.MeshStandardMaterial({color:0x1d2329,roughness:0.8});
+  const main=box(7.05,0.08,0.3,tm);main.position.set(1.425,4.3,0);g.add(main);
+  const run=box(0.3,0.08,2.75,tm);run.position.set(4.8,4.3,1.3);g.add(run);
+  const drop=cyl(0.05,0.05,4.3-(DY+2.2),8,cm);drop.position.set(4.8,(4.3+DY+2.2)/2,2.6);g.add(drop);
+  [-1,0,1,2].forEach(x=>{const b=box(0.12,0.05,4.0,tm);b.position.set(x,4.3,0);g.add(b);
+    [-2,2].forEach(z=>{const c=cyl(0.02,0.02,4.3-0.95,6,cm);c.position.set(x,(4.3+0.95)/2,z);g.add(c);});});
+  selectable(g,{color:C.accent,title:'Cable Tray',code:'PLC → valve actuators',body:'FRP cable tray from the <b>PLC cabinet</b> along the valve battery. A branch between every column pair carries the signal and power cores to the <b>actuators</b> of the feed and collect valves.'});
+  scene.add(g);})();
+
+/* ---- tanks off the skid: pond, water, acid at the inlet end; spent, eluate, sulfate at the outlet end ---- */
+const pondG=pond(9,6,1.8,['Accumulation Pond',ARM.site+' · Li '+ARM.ppm+' ppm'],{color:C.brine,title:'Accumulation Pond',code:ARM.site+' · feed',body:'Open <b>accumulation pond</b> of Great Salt Lake '+ARM.name.toLowerCase()+' brine (<b>Li ≈ '+ARM.ppm+' ppm</b>). '+ARM.pondNote+' One suction line feeds P-101 on the skid, ~'+ARM.brineDay+' m³/day.'});
+pondG.position.set(-18.5,1.0,-2.0);scene.add(pondG);
+const freshT=tank(1.3,2.6,0x4fb3e6,['Fresh Water','Both water washes'],{color:C.wash,title:'Fresh Water Tank',code:'water wash · 2 duties',body:'<b>Fresh-water tank</b> feeding P-201 for <b>both</b> water washes: wash 1 after sorption (EC-controlled) and wash 2 after desorption (pH-controlled).'},{nozAngle:Math.PI/2,lc:C.wash,shell:0x5f93bd});
+freshT.position.set(-11.5,0,-5.4);scene.add(freshT);
+const acidT=tank(1.5,3.2,0xff9f43,['H₂SO₄ Tank · 0.8 M','Desorption acid'],{color:C.acid,title:'H₂SO₄ Storage',code:'0.8 M · 1–3 m³',body:'<b>Sulfuric acid 0.8 M</b> — <b>corrosive</b> (GHS05). Desorption regenerant, fed by P-301 through the service line into the top of each desorbing column.<br><br><b>No HCl:</b> Mn(IV) oxidises Cl⁻→Cl₂.'},{nozAngle:-Math.PI/2,lc:C.acid,shell:0xc98a4e,ghs:1.13});   // ghs: CylinderGeometry θ (from +Z toward +X) of the bearing from this tank (−11.5, 5.6) to the HOME camera (r 46, θ 0.9, φ 1.0 about (−3, 1.8, 0)) = atan2(38.8, 18.5) ≈ 1.13
+acidT.position.set(-11.5,0,5.6);scene.add(acidT);
+const spentT=tank(1.8,3.4,0x3c6b4e,['Spent Brine','Raffinate + wash 1 + UF reject'],{color:C.waste,title:'Spent Brine Accumulator',code:'discharge · large tank',body:'<b>Spent-brine accumulator</b>. Receives the '+ARM.site+' raffinate and <b>water wash 1</b> from the spent header, plus the <b>UF concentrate and backwash</b>.'},{nozAngle:Math.PI,lc:C.waste,shell:0x5e7d64});
+spentT.position.set(11.5,0,-4.5);scene.add(spentT);
+const eluateT=tank(1.5,3.0,0xffd23f,['Eluate Tank','Product · Li ~6000 ppm'],{color:C.eluate,title:'Eluate Accumulator',code:'product · 1–3 m³',body:'Collects <b>product fractions</b> Fr-2 & Fr-3 (Li-rich) from the eluate header. Eluate <b>Li ≈ 6000 ppm</b> — a <b>~'+ARM.enrich+'×</b> enrichment over the '+ARM.ppm+' ppm feed.'},{nozAngle:Math.PI,lc:C.eluate,shell:0xc9b14a});
+eluateT.position.set(12.0,0,0);scene.add(eluateT);
+const sulfateT=tank(1.5,3.0,0x9aa7b2,['Sulfate Tank','Fr-1/4/5 + wash 2'],{color:C.sulfate,title:'Sulfate Accumulator',code:'tails · 1–3 m³',body:'Collects <b>non-product fractions</b> Fr-1, Fr-4, Fr-5 and the acidic <b>water wash 2</b> from the sulfate header.'},{nozAngle:Math.PI,lc:C.sulfate,shell:0x8a8fb0});
+sulfateT.position.set(11.5,0,4.5);scene.add(sulfateT);
+const operator=human({color:C.accent,title:'Operator',code:'scale reference',body:'Shown for <b>scale</b> — about three-quarters of a column tall.'});
+operator.position.set(0.5,0,4.0);operator.rotation.y=Math.PI;operator.scale.setScalar(1.5);scene.add(operator);
+
+/* labels */
+const colLabels=cols.map(c=>addLabel(colLabel('C'+c.userData.n),c.position.x,YS+0.4,c.position.z));
+[pondG,freshT,acidT,eluateT,sulfateT,spentT,plcUnit].forEach(o=>{const L=o.userData.lbl;if(!L)return;
+  addLabel(label(L[0],{scale:1.05,fs:42,subfs:25,border:hx(L[2])}),o.position.x,o.position.y+L[1],o.position.z);});
+[[p101,'P-101','brine pump',1.3],[strainer,'50 µm','mesh strainer',2.0],[cart10,'10 µm','cartridge',2.45],[cart1,'1 µm','cartridge',2.45],[ufU,'UF','ultrafiltration',2.4],
+ [nmrIn,'NMR-in','feed Li',2.55],[p201,'P-201','water pump',1.3],[p301,'P-301','acid pump',1.3],[selector,'Sample selector','8 columns',1.25],[nmrOut,'NMR-out','column outlet Li',2.55]].forEach(a=>{
+  addLabel(label([a[1],a[2]],{scale:0.62,fs:38,subfs:24,border:hx(C.brine)}),a[0].position.x,a[0].position.y+a[3],a[0].position.z);});
+addLabel(label(['PT-101','after UF'],{scale:0.55,fs:38,subfs:24}),-4.4,2.05,0);
+const sorpAnno=addLabel(label(['SORPTION CAROUSEL · '+SORB_TXT+' of 8 columns · '+ARM.brinePerCol+' m³/h each',ARM.sorbTxt+' · 10–11 mg/g Li · stop on breakthrough · recovery >85%'],{scale:1.0,fs:36,subfs:24,color:'#bcd7f0',border:hx(C.brine)}),-1.5,6.2,0);
+const nmrInDisp=addLabel(valueSprite(),nmrIn.position.x,DY+3.35,nmrIn.position.z);nmrInDisp.visible=true;nmrInDisp.setVal('NMR-in · Li ppm',ARM.ppm.toFixed(1),'#7fc0ff');nmrIn.userData.disp=nmrInDisp;
+const nmrOutDisp=addLabel(valueSprite(),nmrOut.position.x,DY+3.35,nmrOut.position.z);nmrOutDisp.visible=true;nmrOutDisp.setVal('NMR-out · C1 ppm','—','#7fc0ff');nmrOut.userData.disp=nmrOutDisp;
+const ecDisp=addLabel(valueSprite(),ecMeter.position.x,2.05,ecMeter.position.z);ecMeter.userData.disp=ecDisp;
+const phDisp=addLabel(valueSprite(),phMeter.position.x,2.65,phMeter.position.z);phMeter.userData.disp=phDisp;
+
+/* ---------- PIPING — every pipe carries its role: {kind,col,role} on a column, {kind,header} on shared lines.
+   kind: branch (col,role) · service (col) · spool (col,end:'top'|'bot') · sample (col) · header / supply / outlet / prep / reject / tap / sampleOut (header).
+   Points always run in the normal flow direction. ---------- */
+const HY={brine:HDR.brine.y,water:HDR.water.y,acid:HDR.acid.y,spent:HDR.spent.y,eluate:HDR.eluate.y,sulfate:HDR.sulfate.y};
+// pond → P-101 → filters → UF → PT-101 → NMR-in → riser → brine cross-tie (fed at its midpoint)
+makePipe({kind:'prep',header:'brine'},[[-13.5,0.65,0],[-12.9,0.65,0],[-12.9,0.918,0],[-12.414,0.918,0]],{r:0.08});
+makePipe({kind:'prep',header:'brine'},[[-12.0,1.395,0],[-12.0,1.6,0],[-6.87,1.6,0]],{r:0.075});
+makePipe({kind:'prep',header:'brine'},[[-5.13,1.6,0],[-2.7,1.6,0],[-2.7,HY.brine,0],[-2.4,HY.brine,0]],{r:0.075});
+makePipe({kind:'tap',header:'brine'},[[-3.6,1.6,0],[-3.6,1.6,0.65]],{r:0.03});
+// UF concentrate / backwash → along the bank-A stack axis (below it) → spent header, on the skid
+makePipe({kind:'reject',header:'spent'},[[-5.5,1.6,-0.17],[-5.5,1.6,-ZH],[-5.5,1.0,-ZH],[HX0,1.0,-ZH],[HX0,HY.spent,-ZH]],{r:0.06});
+// water: tank → P-201 → riser → lane z=−2.2 → onto the bank-A stack axis ; acid: mirror on +Z
+makePipe({kind:'supply',header:'water'},[[-11.5,1.25,-3.6],[-11.5,1.25,-3.1],[-11.5,0.918,-3.1],[-11.5,0.918,-2.614]],{r:0.07});
+makePipe({kind:'supply',header:'water'},[[-11.5,1.395,-2.2],[-11.5,HY.water,-2.2],[-3.0,HY.water,-2.2],[-3.0,HY.water,-ZH],[-2.4,HY.water,-ZH]],{r:0.075});
+makePipe({kind:'supply',header:'acid'},[[-11.5,1.25,3.6],[-11.5,1.25,3.1],[-11.5,0.918,3.1],[-11.5,0.918,2.614]],{r:0.07});
+makePipe({kind:'supply',header:'acid'},[[-11.5,1.395,2.2],[-11.5,HY.acid,2.2],[-3.0,HY.acid,2.2],[-3.0,HY.acid,ZH],[-2.4,HY.acid,ZH]],{r:0.075});
+// feed cross-ties (all at x −2.4, stacked) + feed headers on both bank axes
+makePipe({kind:'header',header:'brine'},[[-2.4,HY.brine,-ZH],[-2.4,HY.brine,ZH]],{r:0.08});
+makePipe({kind:'header',header:'water'},[[-2.4,HY.water,-ZH],[-2.4,HY.water,ZH]],{r:0.08});
+makePipe({kind:'header',header:'acid'},[[-2.4,HY.acid,ZH],[-2.4,HY.acid,-ZH]],{r:0.08});
+['brine','water','acid'].forEach(h=>[-1,1].forEach(s=>makePipe({kind:'header',header:h},[[HDR[h].x0,HY[h],s*ZH],[HX1,HY[h],s*ZH]],{r:0.08})));
+// collect headers on both bank axes → cross-ties → exactly three lines off the skid, side by side
+['spent','eluate','sulfate'].forEach(h=>[-1,1].forEach(s=>makePipe({kind:'header',header:h},[[HX0,HY[h],s*ZH],[HDR[h].x1,HY[h],s*ZH]],{r:0.08})));
+// all three collect cross-ties stacked at x XC (mirror of the feed cross-ties at x −2.4): spent leaves to −Z, sulfate to +Z, eluate along z 0
+makePipe({kind:'header',header:'eluate'},[[XC,HY.eluate,-ZH],[XC,HY.eluate,ZH]],{r:0.08});
+makePipe({kind:'outlet',header:'spent'},[[XC,HY.spent,ZH],[XC,HY.spent,-ZH],[XC,HY.spent,-ZO],[8.0,HY.spent,-ZO],[8.0,HY.spent,-4.5],[9.2,HY.spent,-4.5]],{r:0.08});
+makePipe({kind:'outlet',header:'eluate'},[[XC,HY.eluate,0],[9.7,HY.eluate,0],[9.7,1.25,0],[10.0,1.25,0]],{r:0.08});
+makePipe({kind:'outlet',header:'sulfate'},[[XC,HY.sulfate,-ZH],[XC,HY.sulfate,ZH],[XC,HY.sulfate,ZO],[8.0,HY.sulfate,ZO],[8.0,HY.sulfate,4.5],[9.2,HY.sulfate,4.5],[9.2,1.25,4.5],[9.5,1.25,4.5]],{r:0.08});
+// per column, all valves in the battery: brine branch = the whole brine line to the top tee; water + acid branches join the service riser;
+// outlet line = bottom nozzle → under the bank → riser at |z| ZV → three collect branches; spool top = tee → nozzle stub
+const TOP_ROLES=ROLE_KEYS.filter(r=>ROLES[r].top),OUT_ROLES=ROLE_KEYS.filter(r=>!ROLES[r].top);
+const LINES={};TOP_ROLES.forEach(r=>(LINES[ROLES[r].line]=LINES[ROLES[r].line]||[]).push(r));
+cols.forEach((c,i)=>{const x=c.position.x,zc=c.position.z,s=Math.sign(zc),k=i%4,xo=x+ROLES[OUT_ROLES[0]].dx;
+  // inlet lines: a one-role line is its own branch all the way to the top tee; a shared line starts at its highest header,
+  // the lower roles rise to that point after their valves
+  Object.keys(LINES).forEach(ln=>{const rs=LINES[ln],xl=x+ROLES[rs[0]].dx,yj=Math.max.apply(null,rs.map(r=>HY[ROLES[r].h]));
+    const run=[[xl,yj,s*ZV],[xl,YS,s*ZV],[xl,YS,zc],[x,YS,zc]];
+    if(rs.length===1){makePipe({kind:'branch',col:i,role:rs[0]},[[xl,yj,s*ZH]].concat(run),{r:0.04});return;}
+    rs.forEach(r=>{const y=HY[ROLES[r].h];makePipe({kind:'branch',col:i,role:r},[[xl,y,s*ZH],[xl,y,s*ZV]].concat(y<yj?[[xl,yj,s*ZV]]:[]),{r:0.035});});
+    makePipe({kind:'service',col:i,line:ln},run,{r:0.04});});
+  makePipe({kind:'spool',col:i,end:'top'},[[x,YS,zc],[x,TOPN,zc]],{r:0.05});
+  const yo=Math.max.apply(null,OUT_ROLES.map(r=>HY[ROLES[r].h]));
+  makePipe({kind:'spool',col:i,end:'bot'},[[x,BOTN,zc],[x,YB,zc],[xo,YB,zc],[xo,YB,s*ZV],[xo,yo,s*ZV]],{r:0.05});
+  OUT_ROLES.forEach(r=>makePipe({kind:'branch',col:i,role:r},[[xo,HY[ROLES[r].h],s*ZV],[xo,HY[ROLES[r].h],s*ZH]],{r:0.035}));
+  // sample: tee off the outlet riser below the spent valve → under the collect stack (one level per column) → selector inlet;
+  // farther columns run higher and nearer the axis, so the bundle never crosses itself
+  const ys=0.98-0.06*k,zk=s*(0.06+0.06*k);
+  makePipe({kind:'sample',col:i},[[xo,ys,s*ZV],[xo,ys,s*ZH],[1.95,ys,s*ZH],[1.95,ys,zk],[1.95,0.6,zk],[2.05,0.6,zk]],{r:0.022});});
+makePipe({kind:'sampleOut',header:'sample'},[[2.65,0.6,0],[2.75,0.6,0]],{r:0.025});
+
+/* ---------- STATE / VIEW — the carousel drives everything: colours, valves, panels and the Gantt read only stepAt() ---------- */
+const FR=[{id:'Fr-1',li:'44',ca:'846',mg:'1902',mn:'—',prod:false},{id:'Fr-2',li:'5230',ca:'455',mg:'1133',mn:'533',prod:true},
+  {id:'Fr-3',li:'1038',ca:'184',mg:'88',mn:'1434',prod:true},{id:'Fr-4',li:'79',ca:'61',mg:'63',mn:'369',prod:false},{id:'Fr-5',li:'25',ca:'27',mg:'44',mn:'209',prod:false}];
+const state={tH:0,play:true,speed:1,hl:null,autoRot:false,labels:true,xray:false};
+const H_PER_S=1/20;                                   // ×1: one process hour = 20 s
+const GREY=0x55606a,HOLD_C=0x7d8790,SEL_DWELL=0.125;  // closed actuator, hold bar, selector dwell per column (h)
+const STEP_C={sorption:C.brine,hold:HOLD_C,wash:C.wash,desorb:C.acid,wash2:C.wash2};
+// THE map: step → open valves and the medium each one carries (desorption splits by fraction). Everything else derives from it.
+const FLOWS={sorption:{brineIn:C.brine,spentOut:C.brine},hold:{},wash:{waterIn:C.wash,spentOut:C.wash},
+  desorbProd:{acidIn:C.acid,eluateOut:C.eluate},desorbTail:{acidIn:C.acid,sulfateOut:C.sulfate},wash2:{waterIn:C.wash2,sulfateOut:C.wash2}};
+function flowsOf(s){return FLOWS[s.step==='desorb'?(FR[s.frac].prod?'desorbProd':'desorbTail'):s.step];}
+function stepKey(s){return s.step==='hold'?'sorption':s.step;}           // highlight groups hold with its sorption slot
+const STEP_HDR={};STEPS.forEach(st=>{const hs=new Set();(st==='desorb'?['desorbProd','desorbTail']:[st]).forEach(f=>Object.keys(FLOWS[f]).forEach(r=>hs.add(ROLES[r].h)));STEP_HDR[st]=hs;});
+STEP_HDR.sorption.add('sample');
+const PREP_HDR={prep:'brine',tap:'brine'};                              // brine prep lines live and die with P-101; the UF reject runs as a spent line
+
+/* one snapshot per frame: every column's step + open flows, header usage, the sampled column */
+let snap=null;
+function takeSnap(tH){const st=[],fl=[],use={};
+  for(let c=0;c<8;c++){const s=stepAt(c,tH);st.push(s);const f=flowsOf(s);fl.push(f);
+    Object.keys(f).forEach(r=>{const h=ROLES[r].h,k=stepKey(s);use[h]=use[h]||{hex:f[r],by:{}};if(use[h].by[k]===undefined)use[h].by[k]=f[r];});}
+  const sorbing=[];st.forEach((s,c)=>{if(s.step==='sorption')sorbing.push(c);});
+  const sel=sorbing.length?sorbing[Math.floor(tH/SEL_DWELL)%sorbing.length]:-1;
+  if(sel>=0)use.sample={hex:C.brine,by:{sorption:C.brine}};
+  return {tH,st,fl,use,sorbing,sel};}
+/* pipe → {hex|null, dir, lit}: dir −1 = along the point order (normal flow), +1 = reversed */
+function openHex(f,pred){const r=Object.keys(f).find(pred);return r?f[r]:null;}
+function pipeState(p){const S=snap,hl=state.hl;
+  if(p.col!==undefined){const s=S.st[p.col],f=S.fl[p.col],lit=!hl||stepKey(s)===hl;let hex=null;
+    if(p.kind==='branch')hex=f[p.role]!==undefined?f[p.role]:null;
+    // one rule for every shared stretch: colour of the open role that feeds it. Assumes exactly one inlet (and one outlet)
+    // is open per step — FLOWS guarantees it; two open inlets on one line would short the headers
+    else if(p.kind==='service')hex=openHex(f,r=>ROLES[r].line===p.line);
+    else if(p.kind==='spool')hex=openHex(f,r=>ROLES[r].top===(p.end==='top'));
+    else if(p.kind==='sample')hex=p.col===S.sel?C.brine:null;
+    return {hex,dir:-1,lit,slow:s.step==='desorb'};}                 // every step runs top → down: always along the point order
+  const h=PREP_HDR[p.kind]||p.header,u=S.use[h];
+  const lit=!hl||(PREP_HDR[p.kind]?hl==='sorption':STEP_HDR[hl].has(h));
+  return {hex:u?((hl&&u.by[hl]!==undefined)?u.by[hl]:u.hex):null,dir:-1,lit,slow:h==='acid'||h==='eluate'};}
+let openCount=0;
+function paintValves(){const S=snap;openCount=0;
+  valves.forEach((vs,c)=>{const f=S.fl[c],lit=!state.hl||stepKey(S.st[c])===state.hl;
+    ROLE_KEYS.forEach(r=>{const a=vs[r].userData.act.material,on=f[r]!==undefined;if(on)openCount++;
+      tmpC.setHex(on?f[r]:GREY);if(!lit)tmpC.multiplyScalar(0.4);a.color.copy(tmpC);
+      if(on&&lit){a.emissive.copy(tmpC);a.emissiveIntensity=0.32;}else{a.emissive.setHex(0);a.emissiveIntensity=0;}});});}
+
+/* EC on the spent header (water wash 1 drives it down to set-point), pH on the sulfate header (wash 2 brings it back above 6) */
+function ecNow(S){const w=S.st.find(s=>s.step==='wash');return w?2+238*Math.exp(-4.5*w.tIn/ARM.dur.wash):240;}
+function phNow(S){const w=S.st.find(s=>s.step==='wash2');if(w)return 1.6+5.0*Math.pow(w.tIn/ARM.dur.wash2,0.8);
+  return S.fl.some(f=>f.acidIn!==undefined&&f.sulfateOut!==undefined)?1.2:null;}
+function nmrInPpm(t){return ARM.ppm*(1+0.012*Math.sin(t*41.3)+0.008*Math.sin(t*113.7+1.3));}
+function lastStop(tH){let best=null;                       // most recent stop on breakthrough at or before tH
+  for(let c=0;c<8;c++)for(const dk of [0,-1]){const k=stepAt(c,tH).k+dk,cap=capacity(c,k);if(cap>=1)continue;
+    const t=(8*k+c)*SLOT+ARM.dur.sorption*cap;if(t>=0&&t<=tH&&(!best||t>best.t))best={c,t,cap};}return best;}
+
+const el=id=>document.getElementById(id);
+(function(){const tb=el('frbody');FR.forEach((f,i)=>{const tr=document.createElement('tr');tr.dataset.f=i;tr.innerHTML=`<td>${f.id}</td><td>${f.li}</td><td>${f.ca}</td><td>${f.mg}</td><td>${f.mn}</td><td class="${f.prod?'prod':'waste'}">${f.prod?'eluate':'sulfate'}</td>`;tb.appendChild(tr);});})();
+function setTxt(id,t,col){const e=el(id);e.textContent=t;e.style.color=col||'';}
+function refreshUI(){const S=snap,n=S.sorbing.length,holds=[],wash=[],des=[];
+  S.st.forEach((s,c)=>{if(s.step==='hold')holds.push(c);if(s.step==='wash'||s.step==='wash2')wash.push(c);if(s.step==='desorb')des.push(c);});
+  const cn=a=>a.map(c=>'C'+(c+1)).join(' ');
+  setTxt('clock','t '+S.tH.toFixed(2)+' h');
+  setTxt('hSorb',n+' on sorption ('+SORB_TXT+') · '+cn(S.sorbing),'#7fc0ff');   // holds: stop line below + Gantt
+  setTxt('hP101',(n*ARM.brinePerCol)+' m³/h · '+n+' × '+ARM.brinePerCol,'#2e86de');
+  setTxt('hP201',wash.length?'run · '+cn(wash)+' · '+(wash.length*ARM.washPerCol)+'/'+P201_MAX+' m³/h':'standby',wash.length?'#5ad6e8':'#92a3b0');
+  setTxt('hP301',des.length?'run · '+cn(des)+' · top↓':'standby',des.length?'#ff9f43':'#92a3b0');
+  setTxt('hNin',nmrInPpm(S.tH).toFixed(1),'#7fc0ff');
+  const o=S.sel>=0?outletPpm(S.sel,S.tH):null;setTxt('hNout',S.sel>=0?'C'+(S.sel+1)+' · '+o.toFixed(1)+' ppm':'—','#7fc0ff');
+  setTxt('hSet',(ARM.ppm*BT_SET).toFixed(1)+' ppm ('+Math.round(BT_SET*100)+'%)');
+  let rec=0;for(let c=0;c<8;c++)rec+=cycleRecovery(c,S.st[c].k-1);setTxt('hRec',(rec/8*100).toFixed(1)+' %','#4fe0b0');
+  const ec=ecNow(S),ph=phNow(S),ew=S.st.some(s=>s.step==='wash'),pw=S.st.some(s=>s.step==='wash2');   // ▾ EC falling on wash 1, ▴ pH rising on wash 2
+  setTxt('ecval',ec.toFixed(ec<20?1:0)+' mS'+(ew?'▾':''),ew?'#5ad6e8':'#92a3b0');
+  setTxt('phval',ph===null?'pH —':'pH '+ph.toFixed(2)+(pw?'▴':''),ph===null?'#92a3b0':ph>6?'#4fe0b0':'#ff9f43');
+  setTxt('hValves','valves: '+openCount+' open of '+(ROLE_KEYS.length*8));
+  const ls=lastStop(S.tH);
+  el('hStop').innerHTML=holds.length?holds.map(c=>'<b style="color:#c9d3da">C'+(c+1)+' — stop on breakthrough</b> · valves shut').join(' '):
+    (ls?'last stop on breakthrough: C'+(ls.c+1)+' @ '+ls.t.toFixed(2)+' h (bed '+ls.cap.toFixed(2)+')':'no stop on breakthrough yet');
+  el('ganttNote').textContent=(holds.length?holds.map(c=>'C'+(c+1)+' — stop on breakthrough').join(' · '):'shift '+SLOT.toFixed(3)+' h')+
+    ' · ≈'+ARM.cyclesDay+' cycles/day · ≈'+ARM.brineDay+' m³ brine/day';
+  // desorption fractions: the column that entered desorption first
+  let dc=-1;des.forEach(c=>{if(dc<0||S.st[c].tIn>S.st[dc].tIn)dc=c;});const fr=dc>=0?S.st[dc].frac:-1;
+  el('fractab').classList.toggle('show',dc>=0);el('frnow').textContent=dc>=0?('· C'+(dc+1)+' now '+FR[fr].id):'';
+  document.querySelectorAll('#frbody tr').forEach((tr,i)=>tr.classList.toggle('cur',i===fr));
+  el('btnPlay').textContent=state.play?'⏸':'▶';el('btnPlay').dataset.on=state.play?'1':'0';
+  document.querySelectorAll('.spd').forEach(b=>b.dataset.on=(+b.dataset.s===state.speed)?'1':'0');
+  el('btnRot').dataset.on=state.autoRot?'1':'0';el('btnXray').dataset.on=state.xray?'1':'0';el('btnLabels').dataset.on=state.labels?'1':'0';
+  document.querySelectorAll('.lrow[data-step]').forEach(r=>{r.classList.toggle('hl',state.hl===r.dataset.step);r.classList.toggle('dim',!!state.hl&&state.hl!==r.dataset.step);});
+  // scene displays
+  nmrInDisp.setVal('NMR-in · Li ppm',nmrInPpm(S.tH).toFixed(1),'#7fc0ff');
+  nmrOutDisp.setVal(S.sel>=0?'NMR-out · C'+(S.sel+1)+' ppm':'NMR-out',o!==null?o.toFixed(1):'—',o!==null&&o>=ARM.ppm*BT_SET*0.97?'#ff9f43':'#7fc0ff');
+  ecDisp.visible=true;ecDisp.setVal('EC-101 · mS/cm',ec.toFixed(ec<20?1:0),ew?'#5ad6e8':'#9aa7b2');
+  phDisp.visible=ph!==null;if(ph!==null)phDisp.setVal('pH-101',ph.toFixed(2),ph>6?'#4fe0b0':'#ff9f43');
+  S.st.forEach((s,c)=>{const f=s.step==='sorption';if(colLabels[c].userData.f!==f){colLabels[c].userData.f=f;colLabels[c].update(f);}});
+  drawGantt();}
+
+/* Gantt: one row per column over the current cycle window [floor(t/P)·P, +P], running "now" line */
+const gcv=el('gantt'),gctx=gcv.getContext('2d'),GL=30,GT=4,GR=15;
+function ganttWin(){return {t0:Math.floor(snap.tH/ARM.P)*ARM.P,W:gcv.width-GL-4};}
+function drawGantt(){const g=gctx,{t0,W}=ganttWin(),hl=state.hl;g.clearRect(0,0,gcv.width,gcv.height);
+  g.font='600 10px ui-monospace,monospace';g.textBaseline='middle';
+  for(let c=0;c<8;c++){const y=GT+c*GR;g.fillStyle='#92a3b0';g.fillText('C'+(c+1),4,y+GR/2);
+    let x0=0,prev=null;
+    const flush=x1=>{if(!prev)return;g.globalAlpha=(!hl||stepKey(prev)===hl)?1:0.22;g.fillStyle=hx(STEP_C[prev.step]);g.fillRect(GL+x0,y+2,x1-x0,GR-4);
+      if(prev.step==='desorb'&&FR[prev.frac].prod){g.fillStyle=hx(C.eluate);g.fillRect(GL+x0,y+GR-5,x1-x0,2);}g.globalAlpha=1;};
+    for(let x=0;x<=W;x++){const s=x<W?stepAt(c,t0+ARM.P*x/W):null;
+      if(!s||!prev||s.step!==prev.step||(s.step==='desorb'&&FR[s.frac].prod!==FR[prev.frac].prod)){flush(x);x0=x;prev=s;}}}
+  const yb=GT+8*GR;g.fillStyle='#5d6e7a';g.font='500 9px ui-monospace,monospace';
+  for(let h=0;h<=ARM.P+1e-9;h+=0.5){const x=GL+W*h/ARM.P;g.fillRect(x,yb,1,3);g.fillText((t0+h).toFixed(1),Math.min(x-8,GL+W-22),yb+10);}
+  const xn=GL+W*(snap.tH-t0)/ARM.P;g.fillStyle='#eaf2f6';g.fillRect(xn-1,GT-2,2,8*GR+4);
+  el('ganttHead').textContent='cycle '+(Math.floor(snap.tH/ARM.P)+1)+' · P '+ARM.P.toFixed(2)+' h';}
+function setXray(on){state.xray=!!on;
+  xrObjs.forEach(o=>{o.visible=(o.userData.xr==='cut')===state.xray;});
+  pipes.forEach(p=>p.wall.forEach(m=>{m.transparent=state.xray;m.opacity=state.xray?0.9:1;m.depthWrite=true;m.needsUpdate=true;}));
+  xrMats.forEach(w=>{w.m.transparent=state.xray;w.m.opacity=state.xray?w.op:1;w.m.depthWrite=!state.xray;w.m.needsUpdate=true;});refreshUI();}
+function setHighlight(step){state.hl=step||null;refreshUI();}
+function toggleHL(step){setHighlight(state.hl===step?null:step);}
+gcv.addEventListener('click',e=>{const r=gcv.getBoundingClientRect(),x=(e.clientX-r.left)*(gcv.width/r.width)-GL,y=(e.clientY-r.top)*(gcv.height/r.height)-GT;
+  const {t0,W}=ganttWin(),c=Math.floor(y/GR);if(x<0||x>W||c<0||c>7)return;toggleHL(stepKey(stepAt(c,t0+ARM.P*x/W)));});
+document.querySelectorAll('.lrow[data-step]').forEach(r=>r.addEventListener('click',()=>toggleHL(r.dataset.step)));
+
+const ctrl={target:new T.Vector3(-3,1.8,0),radius:46,theta:0.9,phi:1.0,tR:46,tT:0.9,tP:1.0};
+function applyCam(){ctrl.radius+=(ctrl.tR-ctrl.radius)*0.12;ctrl.theta+=(ctrl.tT-ctrl.theta)*0.12;ctrl.phi+=(ctrl.tP-ctrl.phi)*0.12;
+  const r=ctrl.radius,ph=ctrl.phi,th=ctrl.theta;camera.position.set(ctrl.target.x+r*Math.sin(ph)*Math.sin(th),ctrl.target.y+r*Math.cos(ph),ctrl.target.z+r*Math.sin(ph)*Math.cos(th));camera.lookAt(ctrl.target);}
+const HOME={r:46,t:0.9,p:1.0,target:new T.Vector3(-3,1.8,0)};
+function resetView(){ctrl.tR=HOME.r;ctrl.tT=HOME.t;ctrl.tP=HOME.p;ctrl.target.copy(HOME.target);}
+let drag=null;const dom=renderer.domElement;
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}function tdist(e){const a=e.touches[0],b=e.touches[1];return Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);}
+function down(e){const r=e.button===2||e.shiftKey||(e.touches&&e.touches.length===2);drag={x:e.clientX||(e.touches&&e.touches[0].clientX),y:e.clientY||(e.touches&&e.touches[0].clientY),pan:r,moved:0};if(e.touches&&e.touches.length===2){drag.pinch=tdist(e);drag.pan=true;}}
+function move(e){if(!drag)return;const cx=e.clientX||(e.touches&&e.touches[0].clientX),cy=e.clientY||(e.touches&&e.touches[0].clientY);const dx=cx-drag.x,dy=cy-drag.y;drag.moved+=Math.abs(dx)+Math.abs(dy);
+  if(e.touches&&e.touches.length===2&&drag.pinch){const d=tdist(e);ctrl.tR=clamp(ctrl.tR*drag.pinch/d,9,110);drag.pinch=d;drag.x=cx;drag.y=cy;return;}
+  if(drag.pan){const k=ctrl.radius*0.0016;const right=new T.Vector3().setFromMatrixColumn(camera.matrix,0),up=new T.Vector3().setFromMatrixColumn(camera.matrix,1);ctrl.target.addScaledVector(right,-dx*k);ctrl.target.addScaledVector(up,dy*k);ctrl.target.y=clamp(ctrl.target.y,0,10);}
+  else{ctrl.tT-=dx*0.006;ctrl.tP=clamp(ctrl.tP-dy*0.006,0.16,1.46);}drag.x=cx;drag.y=cy;}
+function up(e){if(drag&&drag.moved<6)pick(e);drag=null;}
+dom.addEventListener('mousedown',down);addEventListener('mousemove',move);addEventListener('mouseup',up);
+dom.addEventListener('touchstart',down,{passive:true});dom.addEventListener('touchmove',e=>{move(e);e.preventDefault();},{passive:false});dom.addEventListener('touchend',up);
+dom.addEventListener('contextmenu',e=>e.preventDefault());dom.addEventListener('wheel',e=>{ctrl.tR=clamp(ctrl.tR*(1+e.deltaY*0.0009),9,110);e.preventDefault();},{passive:false});
+
+const ray=new T.Raycaster(),mouse=new T.Vector2();let hovered=null;
+function rootAt(cx,cy){mouse.x=(cx/innerWidth)*2-1;mouse.y=-(cy/innerHeight)*2+1;ray.setFromCamera(mouse,camera);const hit=ray.intersectObjects(selectables,false);return hit.length?hit[0].object.userData.root:null;}
+function pick(e){const cx=e.clientX||(e.changedTouches&&e.changedTouches[0].clientX),cy=e.clientY||(e.changedTouches&&e.changedTouches[0].clientY);const r=rootAt(cx,cy);if(r)showInfo(r);}
+function showInfo(g){const info=g.userData.info;if(!info)return;el('iTitle').textContent=info.title;el('iCode').textContent=info.code||'';el('iBody').innerHTML=info.body||'';el('iTag').style.color=hx(info.color||C.accent);el('iTag').style.background=hx(info.color||C.accent);el('info').classList.add('show');}
+el('iClose').onclick=()=>el('info').classList.remove('show');
+const tip=el('tip');
+addEventListener('mousemove',e=>{if(drag){tip.style.opacity=0;return;}const r=rootAt(e.clientX,e.clientY);
+  if(r!==hovered){if(hovered)hovered.traverse(o=>{if(o.isMesh&&o.userData._em!==undefined)o.material.emissive.setHex(o.userData._em);});hovered=r;dom.style.cursor=r?'pointer':'grab';
+    if(hovered)hovered.traverse(o=>{if(o.isMesh&&o.userData._em!==undefined)o.material.emissive.setHex(0x123f44);});}
+  if(r&&r.userData.info){el('tipT').textContent=r.userData.info.title;el('tipC').textContent=r.userData.info.code||'';tip.style.left=e.clientX+'px';tip.style.top=e.clientY+'px';tip.style.opacity=1;}else tip.style.opacity=0;});
+
+el('btnPlay').onclick=()=>{state.play=!state.play;refreshUI();};
+document.querySelectorAll('.spd').forEach(b=>b.onclick=()=>{state.speed=+b.dataset.s;refreshUI();});
+el('btnReset').onclick=resetView;el('btnRot').onclick=()=>{state.autoRot=!state.autoRot;refreshUI();};
+el('btnXray').onclick=()=>setXray(!state.xray);
+el('btnLabels').onclick=()=>{state.labels=!state.labels;labelGroup.visible=state.labels;refreshUI();};
+el('btnPanels').onclick=()=>{const h=document.body.classList.toggle('panels-hidden');el('btnPanels').dataset.on=h?'1':'0';el('btnPanels').textContent=h?'Show':'Hide';};
+function makeDraggable(p,handle){let d=null;const s=handle||p;
+  s.addEventListener('pointerdown',e=>{if(!handle&&e.target.closest('button,input,a,select,textarea,.ibtn,.nodrag'))return;const r=p.getBoundingClientRect();d={dx:e.clientX-r.left,dy:e.clientY-r.top};p.style.left=r.left+'px';p.style.top=r.top+'px';p.style.right='auto';p.style.bottom='auto';p.style.transform='none';p.style.maxWidth='none';try{s.setPointerCapture(e.pointerId);}catch(_){}e.stopPropagation();});
+  s.addEventListener('pointermove',e=>{if(!d)return;e.stopPropagation();const r=p.getBoundingClientRect();p.style.left=Math.max(4,Math.min(innerWidth-r.width-4,e.clientX-d.dx))+'px';p.style.top=Math.max(4,Math.min(innerHeight-r.height-4,e.clientY-d.dy))+'px';});
+  const end=()=>{d=null;};s.addEventListener('pointerup',end);s.addEventListener('pointercancel',end);}
+makeDraggable(el('modebar'),el('mbDrag'));
+['brand','hmi','stats','legend','info','carousel'].forEach(id=>{const p=el(id);if(p)makeDraggable(p);});
+(function(){const b=el('brand'),h=el('hmi');if(!b||!h)return;
+  const fit=()=>{if(h.style.left)return;                 // the viewer has dragged it — leave it alone
+    h.style.top=Math.round(b.getBoundingClientRect().bottom+12)+'px';
+    // short windows: the live HMI wins over the static snapshot — hide the snapshot when they would overlap
+    const st=el('stats');if(st&&!st.style.left){st.style.visibility='';const hb=h.getBoundingClientRect().bottom,sr=st.getBoundingClientRect();
+      if(sr.height&&hb+8>sr.top)st.style.visibility='hidden';}};
+  fit();addEventListener('resize',fit);setTimeout(fit,400);})();
+
+/* fix: never frustum-cull (prevents model vanishing at some camera angles) */
+scene.traverse(o=>{o.frustumCulled=false;});
+
+const clock=new T.Clock();let uiTick=0;const tmpC=new T.Color(),tmpE=new T.Color();
+function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),0.05);
+  if(state.autoRot&&!RM)ctrl.tT+=dt*0.16;
+  if(state.play)state.tH+=dt*H_PER_S*state.speed;
+  snap=takeSnap(state.tH);paintValves();
+  for(const p of pipes){const ps=pipeState(p),on=ps.hex!==null;
+    if(!state.xray){tmpC.setHex(on?ps.hex:C.pvc);if(on&&!ps.lit)tmpC.lerp(tmpE.setHex(C.pvc),0.6).multiplyScalar(0.55);
+      if(on&&ps.lit)tmpE.setHex(ps.hex).multiplyScalar(0.42);else tmpE.setHex(0);
+      for(const mm of p.wall){mm.color.lerp(tmpC,0.2);mm.emissive.lerp(tmpE,0.2);}
+      p.core.visible=false;continue;}
+    for(const mm of p.wall){mm.color.lerp(tmpC.setHex(on?0xcdd9e2:C.pvc),0.2);mm.emissive.lerp(tmpE.setHex(0),0.2);mm.opacity+=((on?0.06:0.9)-mm.opacity)*0.2;mm.depthWrite=!on;}
+    if(!on){p.core.visible=false;continue;}
+    tmpC.setHex(ps.hex);if(!ps.lit)tmpC.multiplyScalar(0.16);p.core.visible=true;p.cmat.color.lerp(tmpC,0.25);p.cmat.emissive.lerp(tmpC,0.25);
+    if(state.play)p.cmat.map.offset.x+=ps.dir*dt*(ps.slow?0.4:0.62)*state.speed*(RM?0.5:1);}
+  scene.traverse(o=>{if(o.userData&&o.userData.wave)o.material.opacity=0.74+0.06*Math.sin(performance.now()*0.0015);});
+  uiTick+=dt;if(uiTick>0.12){uiTick=0;refreshUI();}
+  {const b=performance.now()*0.004;const L=plcUnit.userData.leds;L[0].emissiveIntensity=0.45+0.55*Math.abs(Math.sin(b));L[2].emissiveIntensity=0.4+0.6*(0.5+0.5*Math.sin(b*1.7+1));}
+  applyCam();renderer.render(scene,camera);}
+function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);}
+addEventListener('resize',resize);
+snap=takeSnap(state.tH);paintValves();setXray(false);applyCam();animate();
+setTimeout(()=>el('load').classList.add('hide'),1400);
+if(!RM){ctrl.theta=2.3;ctrl.tT=0.9;ctrl.radius=78;ctrl.tR=50;}
+setTimeout(()=>{const h=el('hint');if(h){h.style.transition='opacity 1s';h.style.opacity='0';}},9000);
+})();
+</script>
